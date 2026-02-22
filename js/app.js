@@ -64,7 +64,8 @@
                 <input type="number" v-model="scoreEdits[game.GameID].b"
                        class="score-input-lg" min="0" />
               </div>
-              <button @click="$emit('save-score', game)" class="btn-save-score mt-1">✓ Save</button>
+              <button @click="$emit('save-score', game)" class="btn-save-score mt-1" :disabled="isTied">✓ Save</button>
+              <div v-if="isTied" class="tie-warning">⚠ No ties allowed</div>
             </template>
             <!-- Completed score display -->
             <div v-else-if="game.IsComplete" class="score-final">
@@ -107,6 +108,13 @@
       nameB()  { return this._name(this.game.TeamB_ID); },
       logoA()  { const t = this.teamsMap[this.game.TeamA_ID]; return t && t.logoUrl ? t.logoUrl : ''; },
       logoB()  { const t = this.teamsMap[this.game.TeamB_ID]; return t && t.logoUrl ? t.logoUrl : ''; },
+      isTied() {
+        const e = this.scoreEdits && this.scoreEdits[this.game.GameID];
+        if (!e) return false;
+        const a = String(e.a === undefined ? '' : e.a).trim();
+        const b = String(e.b === undefined ? '' : e.b).trim();
+        return a !== '' && b !== '' && !isNaN(Number(a)) && !isNaN(Number(b)) && Number(a) === Number(b);
+      },
       displayScore() {
         const a = (this.game.ScoreA !== '' && this.game.ScoreA !== null) ? this.game.ScoreA : '—';
         const b = (this.game.ScoreB !== '' && this.game.ScoreB !== null) ? this.game.ScoreB : '—';
@@ -134,7 +142,8 @@
         { key: 'teams',    label: '1 · Teams'    },
         { key: 'schedule', label: '2 · Schedule' },
         { key: 'actions',  label: '3 · Settings' },
-        { key: 'schools',  label: 'Schools'      }
+        { key: 'schools',  label: 'Schools'      },
+        { key: 'sports',   label: 'Sports'       }
       ];
       const viewTabs = [
         { key: 'overview',  label: 'Overview'  },
@@ -163,6 +172,13 @@
       const schoolsEditingId   = ref('');
       const showMatchBuilder   = ref(false);
       const matchBuilderRounds = ref([]);  // [{ roundNumber, matchups: [{TeamA_ID, TeamB_ID}] }]
+
+      /* sports list */
+      const sports         = ref([]);
+      const newSportName   = ref('');
+
+      /* bracket seeding edits keyed by GameID */
+      const bracketEdits   = reactive({});
 
       /* form models */
       const newT = reactive({
@@ -267,6 +283,16 @@
           scoreEdits[g.GameID] = {
             a: (g.ScoreA !== null && g.ScoreA !== '') ? g.ScoreA : '',
             b: (g.ScoreB !== null && g.ScoreB !== '') ? g.ScoreB : ''
+          };
+        });
+      }, { immediate: true });
+
+      /* Keep bracketEdits in sync whenever bracket games change */
+      watch(bracketGames, (bGames) => {
+        bGames.forEach(g => {
+          bracketEdits[g.GameID] = {
+            teamA: g.TeamA_ID || '',
+            teamB: g.TeamB_ID || ''
           };
         });
       }, { immediate: true });
@@ -589,7 +615,7 @@
 
       async function onSaveAllScores() {
         const groupGames = games.value.filter(g => g.Stage === 'GROUP' || g.Stage === 'ROUND_ROBIN');
-        let saved = 0;
+        let saved = 0, ties = 0;
         const errors = [];
         for (const game of groupGames) {
           const edit = scoreEdits[game.GameID];
@@ -597,6 +623,7 @@
           const aVal = String(edit.a).trim();
           const bVal = String(edit.b).trim();
           if (aVal === '' || bVal === '') continue;
+          if (Number(aVal) === Number(bVal)) { ties++; continue; }
           try {
             API.saveScore(game.GameID, edit.a, edit.b);
             saved++;
@@ -605,9 +632,10 @@
         if (saved > 0) {
           await loadTournamentData();
           showAlert(`Saved ${saved} score${saved !== 1 ? 's' : ''}`, 'success');
-        } else if (!errors.length) {
+        } else if (!errors.length && !ties) {
           showAlert('No new scores to save', 'info');
         }
+        if (ties) showAlert(`${ties} tied game${ties !== 1 ? 's' : ''} skipped — ties not allowed`, 'error');
         if (errors.length) showAlert(errors[0], 'error');
       }
 
@@ -675,10 +703,47 @@
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
-      /* ── Lifecycle ──────────────────────────────────────── */
+      /* ── Sports handlers ─────────────────────────────── */
+      function loadSports() { sports.value = API.listSports(); }
+
+      function onAddSport() {
+        const name = newSportName.value.trim();
+        if (!name) { showAlert('Enter a sport name', 'error'); return; }
+        if (sports.value.includes(name)) { showAlert('Already in the list', 'error'); return; }
+        const updated = [...sports.value, name];
+        API.saveSports(updated);
+        sports.value = updated;
+        newSportName.value = '';
+        showAlert('Sport added', 'success');
+      }
+
+      function onRemoveSport(idx) {
+        const updated = sports.value.filter((_, i) => i !== idx);
+        API.saveSports(updated);
+        sports.value = updated;
+      }
+
+      /* ── Bracket seeding ────────────────────────────── */
+      async function onSaveBracketSeeding() {
+        let saved = 0;
+        for (const game of bracketGames.value) {
+          const edit = bracketEdits[game.GameID];
+          if (!edit) continue;
+          if (edit.teamA === game.TeamA_ID && edit.teamB === game.TeamB_ID) continue;
+          try {
+            API.updateGameTeams(game.GameID, edit.teamA, edit.teamB);
+            saved++;
+          } catch (e) { showAlert(e.message || String(e), 'error'); return; }
+        }
+        if (saved > 0) { await loadTournamentData(); showAlert('Bracket seeding saved', 'success'); }
+        else showAlert('No changes to save', 'info');
+      }
+
+      /* ── Lifecycle ────────────────────────────────────── */
       onMounted(async () => {
         await DB.init();
         API.seedSampleData();
+        loadSports();
         const session = AUTH.getSession();
         if (session && session.role === 'admin') {
           isAdmin.value = true;
@@ -697,6 +762,7 @@
         tournamentTeams, currentView, adminTab,
         showCreateForm, bulkMode, showLoginModal, schoolsEditingId,
         editModal, newT, loginForm, newSchool, editSchool, schoolFilter, scoreEdits,
+        sports, newSportName, bracketEdits,
         /* computed */
         isAdminView, teamsMap, schoolsMap, selectedTournament, filteredSchools, hasData,
         authDisplayName, recentRounds, allRounds,
@@ -715,6 +781,7 @@
         onSaveScore, onSaveAllScores, openEditGameModal, onSaveGameTeams,
         onGoToSchoolsTab, startEditSchool, onCancelSchoolEdit, onSaveSchoolEdit,
         onToggleSchoolActive, onAddSchool,
+        onAddSport, onRemoveSport, onSaveBracketSeeding,
         teamNameFor, formatLabel, statusClass
       };
     }

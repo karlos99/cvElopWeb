@@ -22,7 +22,7 @@
     };
   </script>
 
-  <link rel="stylesheet" href="css/styles.css?v=6" />
+  <link rel="stylesheet" href="css/styles.css?v=8" />
 </head>
 <body>
 
@@ -98,7 +98,10 @@
       <h2 class="section-title mb-4">New Tournament</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <input v-model="newT.name"        class="form-input" placeholder="Tournament Name *" />
-        <input v-model="newT.sport"       class="form-input" placeholder="Sport" />
+        <select v-model="newT.sport" class="form-select">
+          <option value="">— Sport —</option>
+          <option v-for="sp in sports" :key="sp" :value="sp">{{ sp }}</option>
+        </select>
         <input v-model.number="newT.year" class="form-input" type="number" placeholder="Season Year" />
         <select v-model="newT.level"  class="form-select">
           <option>Elementary</option><option>Middle</option><option>High</option>
@@ -135,6 +138,9 @@
         </button>
         <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'schools'}" @click="adminTab = 'schools'">
           Schools
+        </button>
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'sports'}" @click="adminTab = 'sports'">
+          Sports
         </button>
       </div>
 
@@ -260,12 +266,46 @@
             <div class="action-row">
               <div class="action-row-info">
                 <h4>Generate Bracket</h4>
-                <p>Seeds top-4 standings into Semifinals and Final.</p>
+                <p>Seeds top standings into Quarterfinals/Semifinals and Final.</p>
               </div>
               <div class="action-row-btns">
                 <button @click="onGenerateBracket(false)" class="btn-xs-primary">🏆 Generate</button>
                 <button @click="onGenerateBracket(true)"  class="btn-xs-outline">Force</button>
               </div>
+            </div>
+            <!-- Bracket seeding overrides -->
+            <div v-if="hasBracket" class="bracket-seed-panel">
+              <div class="bracket-seed-title">Override Team Assignments</div>
+              <p class="bracket-seed-hint">Manually set which team plays in each bracket slot before making it public.</p>
+              <table class="data-table mt-3">
+                <thead>
+                  <tr>
+                    <th style="width:80px">Game</th>
+                    <th>Team A</th>
+                    <th style="width:24px"></th>
+                    <th>Team B</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="g in bracketGames" :key="g.GameID" class="table-row">
+                    <td><span class="bracket-seed-label">{{ g.GameLabel }}</span></td>
+                    <td>
+                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamA" class="form-select-sm w-full">
+                        <option value="">— TBD —</option>
+                        <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+                      </select>
+                    </td>
+                    <td class="text-center" style="color:#d1d5db;font-size:11px">vs</td>
+                    <td>
+                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamB" class="form-select-sm w-full">
+                        <option value="">— TBD —</option>
+                        <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+                      </select>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <button @click="onSaveBracketSeeding" class="btn-sm-primary mt-3">✓ Save Bracket Assignments</button>
             </div>
           </div>
 
@@ -400,6 +440,23 @@
           <button @click="onAddSchool" class="btn-primary mt-3">+ Add School</button>
         </div>
       </div>
+
+      <!-- Sports tab -->
+      <div v-show="adminTab === 'sports'" class="workflow-body">
+        <p class="section-desc mb-4">Manage the list of sports shown in the tournament creation dropdown.</p>
+        <div class="sports-list mb-4">
+          <div v-if="!sports.length" class="empty-panel">No sports yet — add one below.</div>
+          <div v-for="(sp, idx) in sports" :key="sp" class="sport-tag-row">
+            <span class="sport-tag">🏅 {{ sp }}</span>
+            <button @click="onRemoveSport(idx)" class="icon-btn-danger" title="Remove">✕</button>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <input v-model="newSportName" class="form-input" placeholder="New sport name" @keydown.enter="onAddSport" style="max-width:260px" />
+          <button @click="onAddSport" class="btn-primary">+ Add Sport</button>
+        </div>
+      </div>
+
     </div><!-- /admin-panel -->
 
     <!-- View tabs -->
@@ -845,9 +902,9 @@
 <!-- Scripts (order matters) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="js/db.js?v=6"></script>
-<script src="js/api.js?v=6"></script>
-<script src="js/auth.js?v=6"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/db.js?v=7"></script>
+<script src="js/api.js?v=7"></script>
+<script src="js/auth.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

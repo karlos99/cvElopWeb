@@ -547,6 +547,11 @@ p { margin: 0; }
   object-fit: contain; flex-shrink: 0;
   background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px;
 }
+.team-logo-sm {
+  width: 28px; height: 28px; border-radius: 6px;
+  object-fit: contain; flex-shrink: 0;
+  background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px;
+}
 .standings-team-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); min-width: 0; }
 .standings-stats { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
 .standings-stat { font-size: 12px; font-weight: 600; }
@@ -737,3 +742,37 @@ p { margin: 0; }
 
 .bulk-status-done    { font-size: 12px; font-weight: 600; color: #059669; }
 .bulk-status-pending { font-size: 12px; color: #d1d5db; }
+
+/* ── Tie warning ──────────────────────────────────────── */
+.tie-warning {
+  font-size: 11px; font-weight: 600; color: #dc2626;
+  text-align: center; margin-top: 3px; letter-spacing: .02em;
+}
+.btn-save-score:disabled {
+  opacity: .45; cursor: not-allowed; pointer-events: none;
+}
+
+/* ── Sports list ──────────────────────────────────────── */
+.sports-list { display: flex; flex-direction: column; gap: 6px; }
+.sport-tag-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; background: #f8f9ff; border: 1px solid #e0e7ff;
+  border-radius: 8px; width: fit-content; min-width: 200px;
+}
+.sport-tag {
+  font-size: 13px; font-weight: 500; color: #374151; flex: 1;
+}
+
+/* ── Bracket seeding panel ────────────────────────────── */
+.bracket-seed-panel {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid #e0e7ff;
+}
+.bracket-seed-title {
+  font-size: 12.5px; font-weight: 700; color: #4338ca; margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.bracket-seed-hint { font-size: 12px; color: #9ca3af; }
+.bracket-seed-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: #6366f1;
+}

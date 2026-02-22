@@ -616,6 +616,7 @@ var API = (function () {
 
       var a = Number(scoreA);
       var b = Number(scoreB);
+      if (a === b) throw new Error('Ties are not allowed — scores must be different.');
       var winner = a > b ? game.TeamA_ID : (b > a ? game.TeamB_ID : '');
 
       DB.run(
@@ -897,6 +898,28 @@ var API = (function () {
     },
 
     /* ────────────────── SEED DATA ───────────────── */
+
+    /* ─────────────────── SPORTS LIST ─────────────────── */
+
+    /**
+     * Return the admin-configured list of sports.
+     * Stored in localStorage as a JSON array; falls back to a default set.
+     */
+    listSports: function () {
+      var SPORTS_KEY = 'cdElop26_sports_v1';
+      try {
+        var stored = localStorage.getItem(SPORTS_KEY);
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+      return ['Basketball', 'Volleyball', 'Soccer', 'Baseball', 'Softball', 'Badminton', 'Table Tennis', 'Flag Football'];
+    },
+
+    /**
+     * Persist the sports list to localStorage.
+     */
+    saveSports: function (arr) {
+      localStorage.setItem('cdElop26_sports_v1', JSON.stringify(arr));
+    },
 
     /**
      * Seed sample schools on a fresh database.
