@@ -171,6 +171,38 @@ var DB = (function () {
 
       /* ensure all tables exist (idempotent — safe to run on any DB) */
       _db.exec(SCHEMA_SQL);
+
+      /* ── Logo sync: if any school is missing a logo, pull URLs from app.db ── *
+       * Handles the case where localStorage was saved before logos were added   *
+       * to the seed data. Matches by SchoolName (stable) not by SchoolID (uuid).*
+       * Only fetches app.db when actually needed.                               */
+      if (saved) {
+        try {
+          var logoCheck = _db.exec("SELECT COUNT(*) FROM Schools WHERE LogoURL = '' OR LogoURL IS NULL");
+          var missingCount = (logoCheck.length && logoCheck[0].values.length) ? logoCheck[0].values[0][0] : 0;
+          if (missingCount > 0) {
+            var lresp = await fetch('app.db', { cache: 'no-store' });
+            if (lresp.ok) {
+              var lbuf     = await lresp.arrayBuffer();
+              var freshDb  = new _SQL.Database(new Uint8Array(lbuf));
+              var lresult  = freshDb.exec("SELECT SchoolName, LogoURL FROM Schools WHERE LogoURL != ''");
+              if (lresult.length) {
+                toObjects(lresult[0]).forEach(function (s) {
+                  _db.run(
+                    "UPDATE Schools SET LogoURL = ? WHERE SchoolName = ? AND (LogoURL = '' OR LogoURL IS NULL)",
+                    [s.LogoURL, s.SchoolName]
+                  );
+                });
+                console.log('[DB] Synced ' + missingCount + ' school logo(s) from app.db');
+              }
+              freshDb.close();
+            }
+          }
+        } catch (e) {
+          console.warn('[DB] Could not sync school logos:', e);
+        }
+      }
+
       this.save();
     },
 

@@ -11,17 +11,38 @@
 
 var AUTH = (function () {
 
-  var SESSION_KEY = 'ases_tm_session';
+  var SESSION_KEY  = 'ases_tm_session';
+  var USERS_KEY    = 'cdElop26_users_v1';
 
-  /* ── Registered users ──────────────────────────────────────── */
-  var USERS = [
-    {
-      username: atob('a2FybG9z'),       // karlos
-      password: atob('SGlkYWxnbyMx'),   // Hidalgo#1
-      role:     'admin',
-      display:  'Karlos'
-    }
-  ];
+  /* ── Built-in super-admin (cannot be removed) ──────────────── */
+  var SUPER_ADMIN = {
+    username: atob('a2FybG9z'),       // karlos
+    password: atob('SGlkYWxnbyMx'),   // Hidalgo#1
+    role:     'admin',
+    display:  'Karlos',
+    builtin:  true
+  };
+
+  /* ── Stored users ───────────────────────────────────────────── */
+  function getAllUsers() {
+    var extra = [];
+    try {
+      var raw = localStorage.getItem(USERS_KEY);
+      if (raw) extra = JSON.parse(raw);
+    } catch (e) {}
+    return [SUPER_ADMIN].concat(extra);
+  }
+
+  function getStoredUsers() {
+    try {
+      var raw = localStorage.getItem(USERS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveStoredUsers(arr) {
+    localStorage.setItem(USERS_KEY, JSON.stringify(arr));
+  }
 
   /* ── Public API ─────────────────────────────────────────────── */
 
@@ -31,7 +52,7 @@ var AUTH = (function () {
    */
   function login(username, password) {
     var trimUser = (username || '').trim().toLowerCase();
-    var user = USERS.find(function (u) {
+    var user = getAllUsers().find(function (u) {
       return u.username.toLowerCase() === trimUser && u.password === password;
     });
 
@@ -69,6 +90,68 @@ var AUTH = (function () {
     return !!(s && s.role === 'admin');
   }
 
-  return { login: login, logout: logout, getSession: getSession, isAdmin: isAdmin };
+  /** Returns true when a scorer session (score-entry only) is active. */
+  function isScorer() {
+    var s = getSession();
+    return !!(s && s.role === 'scorer');
+  }
+
+  /**
+   * List all users.
+   * Returns objects without passwords: { username, display, role, builtin }
+   */
+  function listUsers() {
+    return getAllUsers().map(function (u) {
+      return { username: u.username, display: u.display, role: u.role || 'admin', builtin: !!u.builtin };
+    });
+  }
+
+  /**
+   * Add a new user.
+   * @param {string} username
+   * @param {string} password
+   * @param {string} display
+   * @param {string} [role='admin']  'admin' | 'scorer'
+   * @returns {{ ok: true } | { ok: false, message }}
+   */
+  function addUser(username, password, display, role) {
+    var u = (username || '').trim();
+    var p = (password || '').trim();
+    var d = (display  || '').trim() || u;
+    var r = (role || 'admin').trim();
+    if (!u || !p) return { ok: false, message: 'Username and password are required.' };
+    if (u.length < 3) return { ok: false, message: 'Username must be at least 3 characters.' };
+    if (p.length < 6) return { ok: false, message: 'Password must be at least 6 characters.' };
+    if (r !== 'admin' && r !== 'scorer') return { ok: false, message: 'Role must be admin or scorer.' };
+    var all = getAllUsers();
+    if (all.find(function (x) { return x.username.toLowerCase() === u.toLowerCase(); })) {
+      return { ok: false, message: 'Username already exists.' };
+    }
+    var stored = getStoredUsers();
+    stored.push({ username: u, password: p, role: r, display: d, builtin: false });
+    saveStoredUsers(stored);
+    return { ok: true };
+  }
+
+  /**
+   * Remove an admin user by username.
+   * Built-in super-admin cannot be removed.
+   */
+  function removeUser(username) {
+    if ((username || '').toLowerCase() === SUPER_ADMIN.username.toLowerCase()) {
+      return { ok: false, message: 'The built-in super-admin cannot be removed.' };
+    }
+    var stored = getStoredUsers().filter(function (u) {
+      return u.username.toLowerCase() !== (username || '').toLowerCase();
+    });
+    saveStoredUsers(stored);
+    return { ok: true };
+  }
+
+  return {
+    login: login, logout: logout,
+    getSession: getSession, isAdmin: isAdmin, isScorer: isScorer,
+    listUsers: listUsers, addUser: addUser, removeUser: removeUser
+  };
 
 }());

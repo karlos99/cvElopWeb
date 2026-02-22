@@ -921,6 +921,25 @@ var API = (function () {
       localStorage.setItem('cdElop26_sports_v1', JSON.stringify(arr));
     },
 
+    /* ─────────────────────── LOCATION VISIBILITY ─────────────────────── */
+
+    /**
+     * Returns true if game locations should be shown for the given tournament.
+     * Stored in localStorage per tournament.
+     */
+    getShowLocation: function (tournamentId) {
+      try {
+        return localStorage.getItem('cdElop26_showloc_' + tournamentId) === '1';
+      } catch (e) { return false; }
+    },
+
+    /** Toggle or set the show-location flag for a tournament. */
+    setShowLocation: function (tournamentId, val) {
+      try {
+        localStorage.setItem('cdElop26_showloc_' + tournamentId, val ? '1' : '0');
+      } catch (e) {}
+    },
+
     /**
      * Seed sample schools on a fresh database.
      * Only runs when the Schools table is empty.

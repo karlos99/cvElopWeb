@@ -24,10 +24,12 @@
    * ────────────────────────────────────────────────────────── */
   const GameRow = {
     props: {
-      game:       { type: Object,  required: true },
-      teamsMap:   { type: Object,  required: true },  // enriched: { TeamID: { TeamName, logoUrl } }
-      isAdmin:    { type: Boolean, default: false },
-      scoreEdits: { type: Object,  required: true }
+      game:         { type: Object,  required: true },
+      teamsMap:     { type: Object,  required: true },
+      isAdmin:      { type: Boolean, default: false },
+      canScore:     { type: Boolean, default: false },
+      scoreEdits:   { type: Object,  required: true },
+      showLocation: { type: Boolean, default: false }
     },
     emits: ['save-score', 'edit-game'],
     template: `
@@ -56,7 +58,7 @@
           <!-- ── Center score ── -->
           <div class="game-center">
             <!-- Admin edit inputs -->
-            <template v-if="isAdmin && !isBye && scoreEdits[game.GameID]">
+            <template v-if="canScore && !isBye && scoreEdits[game.GameID]">
               <div class="score-edit-row">
                 <input type="number" v-model="scoreEdits[game.GameID].a"
                        class="score-input-lg" min="0" />
@@ -64,7 +66,7 @@
                 <input type="number" v-model="scoreEdits[game.GameID].b"
                        class="score-input-lg" min="0" />
               </div>
-              <button @click="$emit('save-score', game)" class="btn-save-score mt-1" :disabled="isTied">✓ Save</button>
+              <button @click="$emit('save-score', game)" class="btn btn-success btn-xs mt-1" :disabled="isTied">✓ Save</button>
               <div v-if="isTied" class="tie-warning">⚠ No ties allowed</div>
             </template>
             <!-- Completed score display -->
@@ -81,7 +83,7 @@
             <div v-else class="score-pending">VS</div>
             <!-- Admin edit-teams button -->
             <button v-if="isAdmin" @click="$emit('edit-game', game)"
-              class="edit-game-btn" title="Edit teams">✎</button>
+              class="btn btn-ghost btn-square btn-xs" title="Edit teams" style="color:#d1d5db">✎</button>
           </div>
 
           <!-- ── Team B ── -->
@@ -97,6 +99,9 @@
             <span class="game-team-nm">{{ nameB }}</span>
           </div>
 
+        </div>
+        <div v-if="showLocation && game.Location" class="game-location">
+          📍 {{ game.Location }}
         </div>
       </div>
     `,
@@ -171,14 +176,27 @@
       const showLoginModal     = ref(false);
       const schoolsEditingId   = ref('');
       const showMatchBuilder   = ref(false);
-      const matchBuilderRounds = ref([]);  // [{ roundNumber, matchups: [{TeamA_ID, TeamB_ID}] }]
+      const matchBuilderRounds = ref([]);
 
       /* sports list */
       const sports         = ref([]);
       const newSportName   = ref('');
 
+      /* admin users */
+      const adminUsers     = ref([]);
+      const newAdminUser   = reactive({ username: '', password: '', display: '', role: 'admin' });
+
+      /* scorer role */
+      const isScorer       = ref(false);   // score-entry-only session
+
       /* bracket seeding edits keyed by GameID */
       const bracketEdits   = reactive({});
+
+      /* overview phase filter */
+      const overviewPhase  = ref('');  // '' = group/rr, 'QF', 'SF', 'FINAL'
+
+      /* can enter scores: admins in admin-view OR scorer role */
+      const canScoreGames  = computed(() => isAdminView.value || isScorer.value);
 
       /* form models */
       const newT = reactive({
@@ -266,6 +284,31 @@
       /* bracket games split by stage */
       const bracketGames = computed(() => games.value.filter(g => g.Stage === 'QF' || g.Stage === 'SF' || g.Stage === 'FINAL'));
       const hasBracket   = computed(() => bracketGames.value.length > 0);
+
+      /* Overview phase tabs: which stages actually have games */
+      const overviewPhases = computed(() => {
+        const stages = new Set(games.value.map(g => g.Stage));
+        const tabs = [{ key: '', label: 'Group Rounds' }];
+        if (stages.has('QF'))    tabs.push({ key: 'QF',    label: 'Quarterfinals' });
+        if (stages.has('SF'))    tabs.push({ key: 'SF',    label: 'Semifinals'    });
+        if (stages.has('FINAL')) tabs.push({ key: 'FINAL', label: 'Final'         });
+        return tabs;
+      });
+
+      /* Games shown in the overview "recent" panel based on selected phase */
+      const overviewRounds = computed(() => {
+        const phase = overviewPhase.value;
+        if (!phase) return recentRounds.value;
+        const filtered = games.value.filter(g => g.Stage === phase);
+        return groupByRound(filtered);
+      });
+
+      /* show-location flag for selected tournament */
+      const showLocation = computed(() =>
+        selectedTournamentId.value
+          ? API.getShowLocation(selectedTournamentId.value)
+          : false
+      );
 
       /* Build structured bracket: { qf: [...], sf: [...], final: game|null } */
       const bracketTree = computed(() => {
@@ -420,16 +463,24 @@
           return;
         }
         showLoginModal.value = false;
-        isAdmin.value  = true;
-        viewMode.value = 'admin';
-        loadData().then(() =>
-          showAlert('Welcome, ' + result.display + '! You are now in Admin mode.', 'success')
-        );
+        if (result.role === 'scorer') {
+          isScorer.value = true;
+          viewMode.value = 'public';
+          loadData().then(() =>
+            showAlert('Welcome, ' + result.display + '! You are in Scorer mode.', 'success')
+          );
+        } else {
+          isAdmin.value  = true;
+          viewMode.value = 'admin';
+          loadData().then(() =>
+            showAlert('Welcome, ' + result.display + '! You are now in Admin mode.', 'success')
+          );
+        }
       }
 
       function onLogout() {
         AUTH.logout();
-        isAdmin.value = false; viewMode.value = 'public';
+        isAdmin.value = false; isScorer.value = false; viewMode.value = 'public';
         selectedTournamentId.value = '';
         teams.value = []; games.value = []; standings.value = [];
         loadData().then(() => showAlert('Signed out successfully.', 'info'));
@@ -723,6 +774,34 @@
         sports.value = updated;
       }
 
+      /* ── Admin users handlers ────────────────────────── */
+      function loadAdminUsers() { adminUsers.value = AUTH.listUsers(); }
+
+      function onAddAdminUser() {
+        const res = AUTH.addUser(newAdminUser.username, newAdminUser.password, newAdminUser.display, newAdminUser.role);
+        if (!res.ok) { showAlert(res.message, 'error'); return; }
+        Object.assign(newAdminUser, { username: '', password: '', display: '', role: 'admin' });
+        loadAdminUsers();
+        showAlert('User added', 'success');
+      }
+
+      function onRemoveAdminUser(username) {
+        if (!confirm(`Remove admin user "${username}"?`)) return;
+        const res = AUTH.removeUser(username);
+        if (!res.ok) { showAlert(res.message, 'error'); return; }
+        loadAdminUsers();
+        showAlert('User removed', 'info');
+      }
+
+      /* ── Location visibility ───────────────────────────── */
+      function onToggleShowLocation() {
+        if (!selectedTournamentId.value) return;
+        const current = API.getShowLocation(selectedTournamentId.value);
+        API.setShowLocation(selectedTournamentId.value, !current);
+        // force reactivity by reloading tournament data
+        loadTournamentData();
+      }
+
       /* ── Bracket seeding ────────────────────────────── */
       async function onSaveBracketSeeding() {
         let saved = 0;
@@ -744,10 +823,13 @@
         await DB.init();
         API.seedSampleData();
         loadSports();
+        loadAdminUsers();
         const session = AUTH.getSession();
         if (session && session.role === 'admin') {
           isAdmin.value = true;
           viewMode.value = 'admin';
+        } else if (session && session.role === 'scorer') {
+          isScorer.value = true;
         }
         await loadData();
       });
@@ -757,16 +839,18 @@
         /* config */
         adminTabs, viewTabs,
         /* state */
-        loading, toasts, isAdmin, viewMode,
+        loading, toasts, isAdmin, isScorer, viewMode,
         selectedTournamentId, tournaments, teams, games, standings, schools,
         tournamentTeams, currentView, adminTab,
         showCreateForm, bulkMode, showLoginModal, schoolsEditingId,
         editModal, newT, loginForm, newSchool, editSchool, schoolFilter, scoreEdits,
         sports, newSportName, bracketEdits,
+        adminUsers, newAdminUser, overviewPhase,
         /* computed */
-        isAdminView, teamsMap, schoolsMap, selectedTournament, filteredSchools, hasData,
+        isAdminView, canScoreGames, teamsMap, schoolsMap, selectedTournament, filteredSchools, hasData,
         authDisplayName, recentRounds, allRounds,
         bracketGames, hasBracket, bracketTree,
+        overviewPhases, overviewRounds, showLocation,
         availableTeams, validationWarnings,
         /* match builder */
         showMatchBuilder, matchBuilderRounds,
@@ -782,6 +866,7 @@
         onGoToSchoolsTab, startEditSchool, onCancelSchoolEdit, onSaveSchoolEdit,
         onToggleSchoolActive, onAddSchool,
         onAddSport, onRemoveSport, onSaveBracketSeeding,
+        onAddAdminUser, onRemoveAdminUser, onToggleShowLocation,
         teamNameFor, formatLabel, statusClass
       };
     }

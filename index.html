@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +13,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Tailwind CDN (layout utilities — no DaisyUI) -->
+  <!-- DaisyUI v3 (component styles) + Tailwind CDN (utilities) -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@3/dist/full.css" rel="stylesheet" type="text/css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -22,7 +23,7 @@
     };
   </script>
 
-  <link rel="stylesheet" href="css/styles.css?v=8" />
+  <link rel="stylesheet" href="css/styles.css?v=10" />
 </head>
 <body>
 
@@ -57,7 +58,9 @@
         <button v-if="isAdmin" @click="onToggleView" class="nav-btn" :class="{'nav-btn-active': viewMode === 'admin'}">
           {{ viewMode === 'admin' ? '⊙ Admin View' : '◎ Public View' }}
         </button>
-        <div v-if="isAdmin" class="flex items-center gap-2 ml-1">
+        <!-- Admin or Scorer: name + logout -->
+        <div v-if="isAdmin || isScorer" class="flex items-center gap-2 ml-1">
+          <span v-if="isScorer" class="badge badge-warning badge-sm hidden sm:inline">Scorer</span>
           <span class="hidden sm:inline text-sm font-medium" style="color:#9ca3af">{{ authDisplayName }}</span>
           <button @click="onLogout" class="nav-btn-danger">Logout</button>
         </div>
@@ -72,13 +75,13 @@
     <!-- Tournament selector -->
     <div class="card mb-5">
       <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-        <select v-model="selectedTournamentId" @change="onTournamentChange" class="form-select" style="flex:1">
+        <select v-model="selectedTournamentId" @change="onTournamentChange" class="select select-bordered" style="flex:1">
           <option value="">Select a Tournament…</option>
           <option v-for="t in tournaments" :key="t.TournamentID" :value="String(t.TournamentID)">
             {{ t.TournamentName }} — {{ t.Sport }} ({{ t.Status }})
           </option>
         </select>
-        <button v-if="isAdminView" @click="showCreateForm = !showCreateForm" class="btn-primary">
+        <button v-if="isAdminView" @click="showCreateForm = !showCreateForm" class="btn btn-primary btn-sm">
           {{ showCreateForm ? 'Cancel' : '+ New Tournament' }}
         </button>
       </div>
@@ -97,28 +100,28 @@
     <div v-if="showCreateForm && isAdminView" class="card mb-5">
       <h2 class="section-title mb-4">New Tournament</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <input v-model="newT.name"        class="form-input" placeholder="Tournament Name *" />
-        <select v-model="newT.sport" class="form-select">
+        <input v-model="newT.name"        class="input input-bordered w-full" placeholder="Tournament Name *" />
+        <select v-model="newT.sport" class="select select-bordered w-full">
           <option value="">— Sport —</option>
           <option v-for="sp in sports" :key="sp" :value="sp">{{ sp }}</option>
         </select>
-        <input v-model.number="newT.year" class="form-input" type="number" placeholder="Season Year" />
-        <select v-model="newT.level"  class="form-select">
+        <input v-model.number="newT.year" class="input input-bordered w-full" type="number" placeholder="Season Year" />
+        <select v-model="newT.level"  class="select select-bordered w-full">
           <option>Elementary</option><option>Middle</option><option>High</option>
         </select>
-        <select v-model="newT.format" class="form-select">
+        <select v-model="newT.format" class="select select-bordered w-full">
           <option value="ROUND_ROBIN">Round Robin</option>
           <option value="ELEMENTARY_GROUP_BRACKET">Elementary Group + Bracket</option>
         </select>
         <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" v-model="newT.public" class="form-checkbox" />
+          <input type="checkbox" v-model="newT.public" class="checkbox checkbox-primary" />
           <span class="text-sm font-medium" style="color:#374151">Public Visible</span>
         </label>
       </div>
-      <textarea v-model="newT.notes" class="form-textarea mt-3" placeholder="Notes (optional)" rows="2"></textarea>
+      <textarea v-model="newT.notes" class="textarea textarea-bordered w-full mt-3" placeholder="Notes (optional)" rows="2"></textarea>
       <div class="flex justify-end gap-2 mt-4">
-        <button @click="showCreateForm = false" class="btn-ghost">Cancel</button>
-        <button @click="onCreate" class="btn-primary">Create Tournament</button>
+        <button @click="showCreateForm = false" class="btn btn-ghost">Cancel</button>
+        <button @click="onCreate" class="btn btn-primary">Create Tournament</button>
       </div>
     </div>
 
@@ -142,6 +145,9 @@
         <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'sports'}" @click="adminTab = 'sports'">
           Sports
         </button>
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'users'}" @click="adminTab = 'users'">
+          Users
+        </button>
       </div>
 
       <!-- Teams tab -->
@@ -150,13 +156,13 @@
         <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
           <h3 class="section-title">Teams <span style="color:#9ca3af;font-weight:400">({{ tournamentTeams.length }})</span></h3>
           <div class="flex flex-wrap gap-2">
-            <button @click="onAddTeamRow"    class="btn-sm-outline">+ Row</button>
-            <button @click="onAddAllSchools" class="btn-sm-outline">+ By Level</button>
-            <button @click="onSaveTeams"     class="btn-sm-primary">Save Teams</button>
+            <button @click="onAddTeamRow"    class="btn btn-outline btn-sm">+ Row</button>
+            <button @click="onAddAllSchools" class="btn btn-outline btn-sm">+ By Level</button>
+            <button @click="onSaveTeams"     class="btn btn-primary btn-sm">Save Teams</button>
           </div>
         </div>
         <div class="overflow-x-auto">
-          <table class="data-table">
+          <table class="table table-zebra w-full">
             <thead>
               <tr>
                 <th>School</th><th>Team Name</th>
@@ -167,24 +173,24 @@
             </thead>
             <tbody>
               <tr v-if="!tournamentTeams.length">
-                <td colspan="5" class="empty-row">No teams yet — click "+ Row" to add</td>
+                <td colspan="5" class="text-center opacity-50 py-6">No teams yet — click "+ Row" to add</td>
               </tr>
-              <tr v-for="(team, idx) in tournamentTeams" :key="idx" class="table-row">
+              <tr v-for="(team, idx) in tournamentTeams" :key="idx" class="hover">
                 <td>
-                  <select v-model="team.SchoolID" class="form-select-sm w-full">
+                  <select v-model="team.SchoolID" class="select select-bordered select-sm w-full">
                     <option value="">— School —</option>
                     <option v-for="s in schools" :key="s.SchoolID" :value="s.SchoolID">
                       {{ s.SchoolName }} ({{ s.Level }})
                     </option>
                   </select>
                 </td>
-                <td><input v-model="team.TeamName"  class="form-input-sm w-full" placeholder="Team name" /></td>
-                <td><input v-model="team.TeamLabel" class="form-input-sm w-full" placeholder="Label" /></td>
+                <td><input v-model="team.TeamName"  class="input input-bordered input-sm w-full" placeholder="Team name" /></td>
+                <td><input v-model="team.TeamLabel" class="input input-bordered input-sm w-full" placeholder="Label" /></td>
                 <td class="hidden md:table-cell">
-                  <input v-model="team.CoachName" class="form-input-sm w-full" placeholder="Coach" />
+                  <input v-model="team.CoachName" class="input input-bordered input-sm w-full" placeholder="Coach" />
                 </td>
                 <td class="text-center">
-                  <button @click="onRemoveTeamRow(idx)" class="icon-btn-danger" title="Remove">✕</button>
+                  <button @click="onRemoveTeamRow(idx)" class="btn btn-ghost btn-xs text-error" title="Remove">✕</button>
                 </td>
               </tr>
             </tbody>
@@ -237,9 +243,9 @@
                 </p>
               </div>
               <div class="action-row-btns">
-                <button @click="onSetStatus('DRAFT')"     class="btn-xs-warning">Draft</button>
-                <button @click="onSetStatus('ACTIVE')"    class="btn-xs-success">Active</button>
-                <button @click="onSetStatus('COMPLETED')" class="btn-xs-outline">Completed</button>
+                <button @click="onSetStatus('DRAFT')"     class="btn btn-warning btn-xs">Draft</button>
+                <button @click="onSetStatus('ACTIVE')"    class="btn btn-success btn-xs">Active</button>
+                <button @click="onSetStatus('COMPLETED')" class="btn btn-outline btn-xs">Completed</button>
               </div>
             </div>
           </div>
@@ -253,8 +259,24 @@
                 <p>{{ selectedTournament && selectedTournament.PublicVisible ? 'Visible to everyone.' : 'Private — only admins can see it.' }}</p>
               </div>
               <div class="action-row-btns">
-                <button @click="onTogglePublic" class="btn-xs-primary">
+                <button @click="onTogglePublic" class="btn btn-primary btn-xs">
                   {{ selectedTournament && selectedTournament.PublicVisible ? 'Make Private' : 'Make Public' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Game Locations -->
+          <div class="action-group">
+            <div class="action-group-title">Game Locations</div>
+            <div class="action-row">
+              <div class="action-row-info">
+                <h4>Show Game Locations</h4>
+                <p>{{ showLocation ? 'Location is shown on game cards.' : 'Location is hidden from game cards.' }}</p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onToggleShowLocation" class="btn btn-primary btn-xs">
+                  {{ showLocation ? 'Hide Location' : 'Show Location' }}
                 </button>
               </div>
             </div>
@@ -269,15 +291,15 @@
                 <p>Seeds top standings into Quarterfinals/Semifinals and Final.</p>
               </div>
               <div class="action-row-btns">
-                <button @click="onGenerateBracket(false)" class="btn-xs-primary">🏆 Generate</button>
-                <button @click="onGenerateBracket(true)"  class="btn-xs-outline">Force</button>
+                <button @click="onGenerateBracket(false)" class="btn btn-primary btn-xs">🏆 Generate</button>
+                <button @click="onGenerateBracket(true)"  class="btn btn-outline btn-xs">Force</button>
               </div>
             </div>
             <!-- Bracket seeding overrides -->
             <div v-if="hasBracket" class="bracket-seed-panel">
               <div class="bracket-seed-title">Override Team Assignments</div>
               <p class="bracket-seed-hint">Manually set which team plays in each bracket slot before making it public.</p>
-              <table class="data-table mt-3">
+              <table class="table table-zebra w-full mt-3">
                 <thead>
                   <tr>
                     <th style="width:80px">Game</th>
@@ -287,17 +309,17 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="g in bracketGames" :key="g.GameID" class="table-row">
+                  <tr v-for="g in bracketGames" :key="g.GameID" class="hover">
                     <td><span class="bracket-seed-label">{{ g.GameLabel }}</span></td>
                     <td>
-                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamA" class="form-select-sm w-full">
+                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamA" class="select select-bordered select-sm w-full">
                         <option value="">— TBD —</option>
                         <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
                       </select>
                     </td>
                     <td class="text-center" style="color:#d1d5db;font-size:11px">vs</td>
                     <td>
-                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamB" class="form-select-sm w-full">
+                      <select v-if="bracketEdits[g.GameID]" v-model="bracketEdits[g.GameID].teamB" class="select select-bordered select-sm w-full">
                         <option value="">— TBD —</option>
                         <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
                       </select>
@@ -305,7 +327,7 @@
                   </tr>
                 </tbody>
               </table>
-              <button @click="onSaveBracketSeeding" class="btn-sm-primary mt-3">✓ Save Bracket Assignments</button>
+              <button @click="onSaveBracketSeeding" class="btn btn-primary btn-sm mt-3">✓ Save Bracket Assignments</button>
             </div>
           </div>
 
@@ -318,7 +340,7 @@
                 <p>Recalculates all standings from recorded game scores.</p>
               </div>
               <div class="action-row-btns">
-                <button @click="onRebuildStandings" class="btn-xs-outline">Rebuild</button>
+                <button @click="onRebuildStandings" class="btn btn-outline btn-xs">Rebuild</button>
               </div>
             </div>
           </div>
@@ -328,7 +350,7 @@
             <div class="danger-zone">
               <div class="danger-zone-title">⚠ Danger Zone</div>
               <p>Permanently deletes the tournament plus all its teams, games, and standings. This cannot be undone.</p>
-              <button @click="onDeleteTournament" class="btn-danger">Delete Tournament</button>
+              <button @click="onDeleteTournament" class="btn btn-error">Delete Tournament</button>
             </div>
           </div>
         </template>
@@ -339,19 +361,19 @@
         <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
           <h3 class="section-title">Manage Schools</h3>
           <div class="flex flex-wrap items-center gap-3">
-            <select v-model="schoolFilter.level" class="form-select-sm">
+            <select v-model="schoolFilter.level" class="select select-bordered select-sm">
               <option value="">All Levels</option>
               <option>Elementary</option><option>Middle</option><option>High</option>
             </select>
             <label class="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" v-model="schoolFilter.showInactive" class="form-checkbox" />
+              <input type="checkbox" v-model="schoolFilter.showInactive" class="checkbox checkbox-primary checkbox-sm" />
               <span class="text-sm" style="color:#4b5563">Show inactive</span>
             </label>
           </div>
         </div>
 
         <div class="overflow-x-auto mb-6">
-          <table class="data-table">
+          <table class="table table-zebra w-full">
             <thead>
               <tr>
                 <th>Name</th>
@@ -364,35 +386,35 @@
             </thead>
             <tbody>
               <tr v-if="!filteredSchools.length">
-                <td colspan="6" class="empty-row">No schools found</td>
+                <td colspan="6" class="text-center opacity-50 py-6">No schools found</td>
               </tr>
               <template v-for="s in filteredSchools" :key="s.SchoolID">
                 <!-- Edit row -->
-                <tr v-if="schoolsEditingId === s.SchoolID" class="table-row" style="background:#f5f3ff">
-                  <td><input v-model="editSchool.name"  class="form-input-sm w-full" /></td>
-                  <td><input v-model="editSchool.short" class="form-input-sm" style="width:62px" /></td>
+                <tr v-if="schoolsEditingId === s.SchoolID" class="hover" style="background:#f5f3ff">
+                  <td><input v-model="editSchool.name"  class="input input-bordered input-sm w-full" /></td>
+                  <td><input v-model="editSchool.short" class="input input-bordered input-sm" style="width:62px" /></td>
                   <td>
-                    <select v-model="editSchool.level" class="form-select-sm">
+                    <select v-model="editSchool.level" class="select select-bordered select-sm">
                       <option>Elementary</option><option>Middle</option><option>High</option>
                     </select>
                   </td>
                   <td class="hidden lg:table-cell">
-                    <input v-model="editSchool.logo" class="form-input-sm w-full" placeholder="URL" />
+                    <input v-model="editSchool.logo" class="input input-bordered input-sm w-full" placeholder="URL" />
                   </td>
                   <td class="text-center">
-                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-muted'">
+                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-ghost'">
                       {{ s.IsActive ? 'Yes' : 'No' }}
                     </span>
                   </td>
                   <td>
                     <div class="flex gap-1">
-                      <button @click="onSaveSchoolEdit(s)"  class="btn-xs-primary">Save</button>
-                      <button @click="onCancelSchoolEdit"   class="btn-xs-ghost">✕</button>
+                      <button @click="onSaveSchoolEdit(s)"  class="btn btn-primary btn-xs">Save</button>
+                      <button @click="onCancelSchoolEdit"   class="btn btn-ghost btn-xs">✕</button>
                     </div>
                   </td>
                 </tr>
                 <!-- View row -->
-                <tr v-else class="table-row" :class="{'row-inactive': !s.IsActive}">
+                <tr v-else class="hover" :class="{'row-inactive': !s.IsActive}">
                   <td>
                     <div class="flex items-center gap-2">
                       <img v-if="s.LogoURL" :src="s.LogoURL" class="team-logo-sm" @error="$event.target.style.display='none'" />
@@ -407,14 +429,14 @@
                     {{ s.LogoURL || '—' }}
                   </td>
                   <td class="text-center">
-                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-muted'">
+                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-ghost'">
                       {{ s.IsActive ? 'Yes' : 'No' }}
                     </span>
                   </td>
                   <td>
                     <div class="flex gap-1">
-                      <button @click="startEditSchool(s)" class="btn-xs-outline" title="Edit">✎</button>
-                      <button @click="onToggleSchoolActive(s)" class="btn-xs-outline"
+                      <button @click="startEditSchool(s)" class="btn btn-outline btn-xs" title="Edit">✎</button>
+                      <button @click="onToggleSchoolActive(s)" class="btn btn-outline btn-xs"
                         :title="s.IsActive ? 'Deactivate' : 'Reactivate'">
                         {{ s.IsActive ? '⊘' : '↺' }}
                       </button>
@@ -430,14 +452,14 @@
         <div class="pt-4" style="border-top:1px solid #f3f4f6">
           <h4 class="text-sm font-semibold mb-3" style="color:#374151">Add New School</h4>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <input v-model="newSchool.name"  class="form-input" placeholder="School Name *" />
-            <input v-model="newSchool.short" class="form-input" placeholder="Short Name" />
-            <select v-model="newSchool.level" class="form-select">
+            <input v-model="newSchool.name"  class="input input-bordered w-full" placeholder="School Name *" />
+            <input v-model="newSchool.short" class="input input-bordered w-full" placeholder="Short Name" />
+            <select v-model="newSchool.level" class="select select-bordered w-full">
               <option>Elementary</option><option>Middle</option><option>High</option>
             </select>
-            <input v-model="newSchool.logo"  class="form-input" placeholder="Logo URL (optional)" />
+            <input v-model="newSchool.logo"  class="input input-bordered w-full" placeholder="Logo URL (optional)" />
           </div>
-          <button @click="onAddSchool" class="btn-primary mt-3">+ Add School</button>
+          <button @click="onAddSchool" class="btn btn-primary mt-3">+ Add School</button>
         </div>
       </div>
 
@@ -448,12 +470,57 @@
           <div v-if="!sports.length" class="empty-panel">No sports yet — add one below.</div>
           <div v-for="(sp, idx) in sports" :key="sp" class="sport-tag-row">
             <span class="sport-tag">🏅 {{ sp }}</span>
-            <button @click="onRemoveSport(idx)" class="icon-btn-danger" title="Remove">✕</button>
+            <button @click="onRemoveSport(idx)" class="btn btn-ghost btn-xs text-error" title="Remove">✕</button>
           </div>
         </div>
         <div class="flex gap-2">
-          <input v-model="newSportName" class="form-input" placeholder="New sport name" @keydown.enter="onAddSport" style="max-width:260px" />
-          <button @click="onAddSport" class="btn-primary">+ Add Sport</button>
+          <input v-model="newSportName" class="input input-bordered" placeholder="New sport name" @keydown.enter="onAddSport" style="max-width:260px" />
+          <button @click="onAddSport" class="btn btn-primary">+ Add Sport</button>
+        </div>
+      </div>
+
+      <!-- Users tab -->
+      <div v-show="adminTab === 'users'" class="workflow-body">
+        <p class="section-desc mb-4">Manage admin users. Admins have full access; Scorers can only enter game scores.</p>
+        <table class="table table-zebra w-full mb-4">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Display Name</th>
+              <th style="width:80px">Role</th>
+              <th style="width:60px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!adminUsers.length">
+              <td colspan="4" class="text-center opacity-50 py-6">No users configured</td>
+            </tr>
+            <tr v-for="u in adminUsers" :key="u.username" class="hover">
+              <td class="font-medium" style="color:#111827">{{ u.username }}</td>
+              <td>{{ u.display }}</td>
+              <td>
+                <span v-if="u.builtin" class="badge badge-warning badge-sm">Built-in</span>
+                <span v-else-if="u.role === 'scorer'" class="badge badge-info badge-sm">Scorer</span>
+                <span v-else class="badge badge-primary badge-sm">Admin</span>
+              </td>
+              <td class="text-center">
+                <button v-if="!u.builtin" @click="onRemoveAdminUser(u.username)" class="btn btn-ghost btn-xs text-error" title="Remove">✕</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="border-top:1px solid #f3f4f6" class="pt-4">
+          <h4 class="text-sm font-semibold mb-3" style="color:#374151">Add New User</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input v-model="newAdminUser.username" class="input input-bordered w-full" placeholder="Username *" />
+            <input v-model="newAdminUser.password" class="input input-bordered w-full" type="password" placeholder="Password * (6+ chars)" />
+            <input v-model="newAdminUser.display"  class="input input-bordered w-full" placeholder="Display Name" />
+            <select v-model="newAdminUser.role" class="select select-bordered w-full">
+              <option value="admin">Admin (full access)</option>
+              <option value="scorer">Scorer (scores only)</option>
+            </select>
+          </div>
+          <button @click="onAddAdminUser" class="btn btn-primary mt-3">+ Add User</button>
         </div>
       </div>
 
@@ -495,15 +562,24 @@
 
         <!-- Recent games -->
         <div class="card lg:col-span-2">
-          <h2 class="section-title mb-4">Recent Group Games</h2>
-          <div v-if="!recentRounds.length" class="empty-panel">No games scheduled yet</div>
+          <h2 class="section-title mb-2">Recent Games</h2>
+          <div v-if="overviewPhases.length > 1" class="phase-tabs mb-3">
+            <button v-for="ph in overviewPhases" :key="ph.key"
+              @click="overviewPhase = ph.key"
+              class="phase-tab" :class="{'phase-tab-active': overviewPhase === ph.key}">
+              {{ ph.label }}
+            </button>
+          </div>
+          <div v-if="!overviewRounds.length" class="empty-panel">No games scheduled yet</div>
           <div v-else>
-            <div v-for="grp in recentRounds" :key="grp.round" class="mb-5">
+            <div v-for="grp in overviewRounds" :key="grp.round" class="mb-5">
               <div class="round-label">Round {{ grp.round }}</div>
               <div class="space-y-2 mt-2">
                 <game-row v-for="game in grp.games" :key="game.GameID"
                   :game="game" :teams-map="teamsMap"
-                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  :is-admin="isAdminView" :can-score="canScoreGames"
+                  :score-edits="scoreEdits"
+                  :show-location="showLocation"
                   @save-score="onSaveScore" @edit-game="openEditGameModal">
                 </game-row>
               </div>
@@ -519,7 +595,7 @@
       <h2 class="section-title mb-5">Full Standings</h2>
       <div v-if="!standings.length" class="empty-panel">No standings data</div>
       <div v-else class="overflow-x-auto">
-        <table class="data-table">
+        <table class="table table-zebra w-full">
           <thead>
             <tr>
               <th style="width:32px">#</th>
@@ -532,7 +608,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in standings" :key="row.TeamID" class="table-row">
+            <tr v-for="row in standings" :key="row.TeamID" class="hover">
               <td class="font-bold" style="color:#d1d5db">{{ row.Rank }}</td>
               <td>
                 <img v-if="teamsMap[row.TeamID] && teamsMap[row.TeamID].logoUrl"
@@ -573,7 +649,9 @@
           <div class="space-y-2 mt-2">
             <game-row v-for="game in grp.games" :key="game.GameID"
               :game="game" :teams-map="teamsMap"
-              :is-admin="isAdminView" :score-edits="scoreEdits"
+              :is-admin="isAdminView" :can-score="canScoreGames"
+              :score-edits="scoreEdits"
+              :show-location="showLocation"
               @save-score="onSaveScore" @edit-game="openEditGameModal">
             </game-row>
           </div>
@@ -584,7 +662,7 @@
       <div v-else>
         <div class="bulk-save-bar">
           <span class="bulk-save-hint">Fill in scores below, then save all at once.</span>
-          <button @click="onSaveAllScores" class="btn-primary">✓ Save All Scores</button>
+          <button @click="onSaveAllScores" class="btn btn-primary">✓ Save All Scores</button>
         </div>
         <div v-for="grp in allRounds" :key="grp.round" class="mb-6">
           <div class="round-label">Round {{ grp.round }}</div>
@@ -639,7 +717,7 @@
         </div>
         <div class="bulk-save-bar mt-4">
           <span></span>
-          <button @click="onSaveAllScores" class="btn-primary">✓ Save All Scores</button>
+          <button @click="onSaveAllScores" class="btn btn-primary">✓ Save All Scores</button>
         </div>
       </div>
     </div>
@@ -668,13 +746,17 @@
               <div class="bracket-match" v-if="bracketTree.qf[0]">
                 <div class="bracket-round-tag">{{ bracketTree.qf[0].GameLabel }}</div>
                 <game-row :game="bracketTree.qf[0]" :teams-map="teamsMap"
-                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  :is-admin="isAdminView" :can-score="canScoreGames"
+                  :score-edits="scoreEdits"
+                  :show-location="showLocation"
                   @save-score="onSaveScore" @edit-game="openEditGameModal" />
               </div>
               <div class="bracket-match" v-if="bracketTree.qf[1]">
                 <div class="bracket-round-tag">{{ bracketTree.qf[1].GameLabel }}</div>
                 <game-row :game="bracketTree.qf[1]" :teams-map="teamsMap"
-                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  :is-admin="isAdminView" :can-score="canScoreGames"
+                  :score-edits="scoreEdits"
+                  :show-location="showLocation"
                   @save-score="onSaveScore" @edit-game="openEditGameModal" />
               </div>
             </div>
@@ -684,13 +766,17 @@
               <div class="bracket-match" v-if="bracketTree.qf[2]">
                 <div class="bracket-round-tag">{{ bracketTree.qf[2].GameLabel }}</div>
                 <game-row :game="bracketTree.qf[2]" :teams-map="teamsMap"
-                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  :is-admin="isAdminView" :can-score="canScoreGames"
+                  :score-edits="scoreEdits"
+                  :show-location="showLocation"
                   @save-score="onSaveScore" @edit-game="openEditGameModal" />
               </div>
               <div class="bracket-match" v-if="bracketTree.qf[3]">
                 <div class="bracket-round-tag">{{ bracketTree.qf[3].GameLabel }}</div>
                 <game-row :game="bracketTree.qf[3]" :teams-map="teamsMap"
-                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  :is-admin="isAdminView" :can-score="canScoreGames"
+                  :score-edits="scoreEdits"
+                  :show-location="showLocation"
                   @save-score="onSaveScore" @edit-game="openEditGameModal" />
               </div>
             </div>
@@ -714,13 +800,17 @@
             <div class="bracket-match" v-if="bracketTree.sf[0]">
               <div class="bracket-round-tag">SF 1</div>
               <game-row :game="bracketTree.sf[0]" :teams-map="teamsMap"
-                :is-admin="isAdminView" :score-edits="scoreEdits"
+                :is-admin="isAdminView" :can-score="canScoreGames"
+                :score-edits="scoreEdits"
+                :show-location="showLocation"
                 @save-score="onSaveScore" @edit-game="openEditGameModal" />
             </div>
             <div class="bracket-match" v-if="bracketTree.sf[1]">
               <div class="bracket-round-tag">SF 2</div>
               <game-row :game="bracketTree.sf[1]" :teams-map="teamsMap"
-                :is-admin="isAdminView" :score-edits="scoreEdits"
+                :is-admin="isAdminView" :can-score="canScoreGames"
+                :score-edits="scoreEdits"
+                :show-location="showLocation"
                 @save-score="onSaveScore" @edit-game="openEditGameModal" />
             </div>
           </div>
@@ -742,7 +832,9 @@
             <div class="bracket-match bracket-match-final">
               <div class="bracket-round-tag bracket-round-tag-final">🏆 Final</div>
               <game-row :game="bracketTree.final" :teams-map="teamsMap"
-                :is-admin="isAdminView" :score-edits="scoreEdits"
+                :is-admin="isAdminView" :can-score="canScoreGames"
+                :score-edits="scoreEdits"
+                :show-location="showLocation"
                 @save-score="onSaveScore" @edit-game="openEditGameModal" />
             </div>
           </div>
@@ -770,23 +862,24 @@
   </main>
 
   <!-- Login modal -->
-  <div v-if="showLoginModal" class="modal-overlay" @click.self="showLoginModal = false">
+  <div v-if="showLoginModal" class="modal modal-open">
+    <div class="modal-backdrop" @click="showLoginModal = false"></div>
     <div class="modal-box" style="max-width:380px">
       <h3 class="text-xl font-bold mb-1" style="color:#111827">Admin Login</h3>
       <p class="text-sm mb-5" style="color:#9ca3af">Sign in to manage tournaments.</p>
 
-      <div v-if="loginForm.error" class="error-alert mb-4">{{ loginForm.error }}</div>
+      <div v-if="loginForm.error" class="alert alert-error mb-4">{{ loginForm.error }}</div>
 
       <div class="mb-4">
         <label class="form-label">Username</label>
-        <input v-model="loginForm.username" type="text" class="form-input"
+        <input v-model="loginForm.username" type="text" class="input input-bordered w-full"
           placeholder="Username" autocomplete="username" @keydown.enter="onLoginSubmit" />
       </div>
       <div class="mb-5">
         <label class="form-label">Password</label>
         <div class="relative">
           <input v-model="loginForm.password" :type="loginForm.showPw ? 'text' : 'password'"
-            class="form-input" style="padding-right:42px" placeholder="Password"
+            class="input input-bordered w-full" style="padding-right:42px" placeholder="Password"
             autocomplete="current-password" @keydown.enter="onLoginSubmit" />
           <button type="button" @click="loginForm.showPw = !loginForm.showPw" class="pw-toggle-btn">
             <svg v-if="!loginForm.showPw" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -799,42 +892,44 @@
           </button>
         </div>
       </div>
-      <button @click="onLoginSubmit"          class="btn-primary w-full mb-2">Sign In</button>
-      <button @click="showLoginModal = false"  class="btn-ghost w-full">Cancel</button>
+      <button @click="onLoginSubmit"          class="btn btn-primary w-full mb-2">Sign In</button>
+      <button @click="showLoginModal = false"  class="btn btn-ghost w-full">Cancel</button>
     </div>
   </div>
 
   <!-- Edit game modal -->
-  <div v-if="editModal.show" class="modal-overlay" @click.self="editModal.show = false">
+  <div v-if="editModal.show" class="modal modal-open">
+    <div class="modal-backdrop" @click="editModal.show = false"></div>
     <div class="modal-box" style="max-width:380px">
       <h3 class="text-xl font-bold mb-4" style="color:#111827">Edit Game Teams</h3>
       <div class="mb-4">
         <label class="form-label">Team A</label>
-        <select v-model="editModal.teamA" class="form-select">
+        <select v-model="editModal.teamA" class="select select-bordered w-full">
           <option value="">— Select Team —</option>
           <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
         </select>
       </div>
       <div class="mb-5">
         <label class="form-label">Team B</label>
-        <select v-model="editModal.teamB" class="form-select">
+        <select v-model="editModal.teamB" class="select select-bordered w-full">
           <option value="">— Select Team —</option>
           <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
         </select>
       </div>
       <div class="flex justify-end gap-2">
-        <button @click="editModal.show = false" class="btn-ghost">Cancel</button>
-        <button @click="onSaveGameTeams"        class="btn-primary">Save</button>
+        <button @click="editModal.show = false" class="btn btn-ghost">Cancel</button>
+        <button @click="onSaveGameTeams"        class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
   <!-- Match Builder Modal -->
-  <div v-if="showMatchBuilder" class="modal-overlay" @click.self="showMatchBuilder = false">
-    <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto">
+  <div v-if="showMatchBuilder" class="modal modal-open">
+    <div class="modal-backdrop" @click="showMatchBuilder = false"></div>
+    <div class="modal-box" style="max-width:680px">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold">Custom Match Builder</h2>
-        <button @click="showMatchBuilder = false" class="btn-ghost" style="padding:4px 8px">✕</button>
+        <button @click="showMatchBuilder = false" class="btn btn-ghost btn-sm btn-square">✕</button>
       </div>
 
       <!-- Validation warnings -->
@@ -863,23 +958,23 @@
         <div v-for="round in matchBuilderRounds" :key="round.roundNumber">
           <div class="flex items-center justify-between mb-2">
             <span class="round-label">Round {{ round.roundNumber }}</span>
-            <button @click="addMatchupSlot(round)" class="btn-outline" style="padding:2px 10px;font-size:0.78rem">+ Matchup</button>
+            <button @click="addMatchupSlot(round)" class="btn btn-outline btn-xs">+ Matchup</button>
           </div>
 
           <div class="space-y-2">
             <div v-for="(matchup, idx) in round.matchups" :key="idx"
                  class="flex items-center gap-2 p-2 rounded-lg"
                  :style="getMatchupErrors(matchup, round.roundNumber).length ? 'background:#fef2f2;border:1px solid #fca5a5' : 'background:#f9fafb;border:1px solid #e5e7eb'">
-              <select v-model="matchup.TeamA_ID" class="form-select" style="flex:1">
+              <select v-model="matchup.TeamA_ID" class="select select-bordered select-sm" style="flex:1">
                 <option value="">— Team A —</option>
                 <option v-for="t in availableTeams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
               </select>
               <span class="text-xs font-bold" style="color:#9ca3af">vs</span>
-              <select v-model="matchup.TeamB_ID" class="form-select" style="flex:1">
+              <select v-model="matchup.TeamB_ID" class="select select-bordered select-sm" style="flex:1">
                 <option value="">— Team B —</option>
                 <option v-for="t in availableTeams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
               </select>
-              <button @click="removeMatchup(round, idx)" class="btn-ghost" style="padding:4px 8px;color:#ef4444" title="Remove">✕</button>
+              <button @click="removeMatchup(round, idx)" class="btn btn-ghost btn-xs text-error" title="Remove">✕</button>
             </div>
             <p v-if="!round.matchups.length" class="text-sm" style="color:#9ca3af">No matchups — click + Matchup to add.</p>
           </div>
@@ -888,10 +983,10 @@
 
       <!-- Save actions -->
       <div class="flex flex-wrap justify-end gap-2 pt-4" style="border-top:1px solid #e5e7eb">
-        <button @click="showMatchBuilder = false" class="btn-ghost">Cancel</button>
-        <button @click="saveCustomSchedule(false)" class="btn-outline"
+        <button @click="showMatchBuilder = false" class="btn btn-ghost">Cancel</button>
+        <button @click="saveCustomSchedule(false)" class="btn btn-outline"
                 :disabled="validationWarnings.length > 0">Save Custom Only</button>
-        <button @click="saveCustomSchedule(true)" class="btn-primary"
+        <button @click="saveCustomSchedule(true)" class="btn btn-primary"
                 :disabled="validationWarnings.length > 0">Save + Auto-fill Rest</button>
       </div>
     </div>
@@ -902,9 +997,9 @@
 <!-- Scripts (order matters) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="js/db.js?v=7"></script>
-<script src="js/api.js?v=7"></script>
-<script src="js/auth.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/db.js?v=10"></script>
+<script src="js/api.js?v=9"></script>
+<script src="js/auth.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>
