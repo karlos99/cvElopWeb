@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASES Tournament Manager</title>
+
+  <!-- Inline v-cloak hide before Vue boots -->
+  <style>[v-cloak]{display:none}</style>
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN (layout utilities — no DaisyUI) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      corePlugins: { preflight: false },
+      theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } }
+    };
+  </script>
+
+  <link rel="stylesheet" href="css/styles.css?v=6" />
+</head>
+<body>
+
+<div id="app" v-cloak>
+
+  <div v-if="loading" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,.4);backdrop-filter:blur(4px)">
+    <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-3">
+      <div class="loader"></div>
+      <span class="text-sm font-medium" style="color:#9ca3af">Loading…</span>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" style="min-width:260px;max-width:340px">
+    <transition-group name="toast">
+      <div v-for="t in toasts" :key="t.id" class="toast-item pointer-events-auto" :class="'toast-'+t.type">
+        {{ t.message }}
+      </div>
+    </transition-group>
+  </div>
+
+  <!-- Navbar -->
+  <header class="nav-header">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between" style="height:56px">
+      <div class="flex items-center gap-3">
+        <div class="nav-logo">AT</div>
+        <div class="nav-divider"></div>
+        <span class="nav-title">ASES Tournament Manager</span>
+      </div>
+      <nav class="flex items-center gap-1">
+        <button v-if="isAdmin" @click="onGoToSchoolsTab" class="nav-btn">Schools</button>
+        <button v-if="isAdmin" @click="onToggleView" class="nav-btn" :class="{'nav-btn-active': viewMode === 'admin'}">
+          {{ viewMode === 'admin' ? '⊙ Admin View' : '◎ Public View' }}
+        </button>
+        <div v-if="isAdmin" class="flex items-center gap-2 ml-1">
+          <span class="hidden sm:inline text-sm font-medium" style="color:#9ca3af">{{ authDisplayName }}</span>
+          <button @click="onLogout" class="nav-btn-danger">Logout</button>
+        </div>
+        <button v-else @click="openLoginModal" class="nav-btn-primary ml-1">Login</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+    <!-- Tournament selector -->
+    <div class="card mb-5">
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+        <select v-model="selectedTournamentId" @change="onTournamentChange" class="form-select" style="flex:1">
+          <option value="">Select a Tournament…</option>
+          <option v-for="t in tournaments" :key="t.TournamentID" :value="String(t.TournamentID)">
+            {{ t.TournamentName }} — {{ t.Sport }} ({{ t.Status }})
+          </option>
+        </select>
+        <button v-if="isAdminView" @click="showCreateForm = !showCreateForm" class="btn-primary">
+          {{ showCreateForm ? 'Cancel' : '+ New Tournament' }}
+        </button>
+      </div>
+      <!-- Status bar -->
+      <div v-if="selectedTournament" class="t-status-bar" style="margin-top:14px">
+        <span class="t-status-chip" :class="statusClass(selectedTournament.Status)">{{ selectedTournament.Status }}</span>
+        <span class="t-stat">{{ selectedTournament.Sport }}</span>
+        <span class="t-stat"><strong>{{ selectedTournament.Level }}</strong></span>
+        <span class="t-stat">{{ formatLabel(selectedTournament) }}</span>
+        <span class="t-stat"><strong>{{ teams.length }}</strong> teams</span>
+        <span class="t-stat"><strong>{{ games.length }}</strong> games</span>
+      </div>
+    </div>
+
+    <!-- Create tournament form -->
+    <div v-if="showCreateForm && isAdminView" class="card mb-5">
+      <h2 class="section-title mb-4">New Tournament</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <input v-model="newT.name"        class="form-input" placeholder="Tournament Name *" />
+        <input v-model="newT.sport"       class="form-input" placeholder="Sport" />
+        <input v-model.number="newT.year" class="form-input" type="number" placeholder="Season Year" />
+        <select v-model="newT.level"  class="form-select">
+          <option>Elementary</option><option>Middle</option><option>High</option>
+        </select>
+        <select v-model="newT.format" class="form-select">
+          <option value="ROUND_ROBIN">Round Robin</option>
+          <option value="ELEMENTARY_GROUP_BRACKET">Elementary Group + Bracket</option>
+        </select>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" v-model="newT.public" class="form-checkbox" />
+          <span class="text-sm font-medium" style="color:#374151">Public Visible</span>
+        </label>
+      </div>
+      <textarea v-model="newT.notes" class="form-textarea mt-3" placeholder="Notes (optional)" rows="2"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button @click="showCreateForm = false" class="btn-ghost">Cancel</button>
+        <button @click="onCreate" class="btn-primary">Create Tournament</button>
+      </div>
+    </div>
+
+    <!-- Admin panel -->
+    <div v-if="isAdminView" class="workflow-panel">
+      <!-- Workflow tabs -->
+      <div class="workflow-tabs">
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'teams'}" @click="adminTab = 'teams'">
+          <span class="workflow-step-num">1</span>Teams
+        </button>
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'schedule'}" @click="adminTab = 'schedule'">
+          <span class="workflow-step-num">2</span>Schedule
+          <span v-if="games.length" class="workflow-tab-badge">{{ games.length }}</span>
+        </button>
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'actions'}" @click="adminTab = 'actions'">
+          <span class="workflow-step-num">3</span>Settings
+        </button>
+        <button class="workflow-tab" :class="{'workflow-tab-active': adminTab === 'schools'}" @click="adminTab = 'schools'">
+          Schools
+        </button>
+      </div>
+
+      <!-- Teams tab -->
+      <div v-show="adminTab === 'teams'" class="workflow-body">
+        <p class="section-desc mb-4">Add participating schools and assign team names. Click <strong>Save Teams</strong> when done.</p>
+        <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+          <h3 class="section-title">Teams <span style="color:#9ca3af;font-weight:400">({{ tournamentTeams.length }})</span></h3>
+          <div class="flex flex-wrap gap-2">
+            <button @click="onAddTeamRow"    class="btn-sm-outline">+ Row</button>
+            <button @click="onAddAllSchools" class="btn-sm-outline">+ By Level</button>
+            <button @click="onSaveTeams"     class="btn-sm-primary">Save Teams</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>School</th><th>Team Name</th>
+                <th style="width:90px">Label</th>
+                <th class="hidden md:table-cell">Coach</th>
+                <th style="width:40px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!tournamentTeams.length">
+                <td colspan="5" class="empty-row">No teams yet — click "+ Row" to add</td>
+              </tr>
+              <tr v-for="(team, idx) in tournamentTeams" :key="idx" class="table-row">
+                <td>
+                  <select v-model="team.SchoolID" class="form-select-sm w-full">
+                    <option value="">— School —</option>
+                    <option v-for="s in schools" :key="s.SchoolID" :value="s.SchoolID">
+                      {{ s.SchoolName }} ({{ s.Level }})
+                    </option>
+                  </select>
+                </td>
+                <td><input v-model="team.TeamName"  class="form-input-sm w-full" placeholder="Team name" /></td>
+                <td><input v-model="team.TeamLabel" class="form-input-sm w-full" placeholder="Label" /></td>
+                <td class="hidden md:table-cell">
+                  <input v-model="team.CoachName" class="form-input-sm w-full" placeholder="Coach" />
+                </td>
+                <td class="text-center">
+                  <button @click="onRemoveTeamRow(idx)" class="icon-btn-danger" title="Remove">✕</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Schedule tab -->
+      <div v-show="adminTab === 'schedule'" class="workflow-body">
+        <div v-if="!selectedTournamentId || !teams.length" class="empty-panel">
+          <div class="empty-icon">📋</div>
+          <p class="mt-2">Add teams first, then come back to generate a schedule.</p>
+        </div>
+        <template v-else>
+          <p class="section-desc mb-5">
+            <strong>{{ games.length }}</strong> {{ games.length === 1 ? 'game' : 'games' }} in the schedule.
+            Generating replaces all existing Group / Round Robin games.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="schedule-option" @click="openMatchBuilder">
+              <div class="schedule-option-icon">📋</div>
+              <div>
+                <h4>Custom Match Builder</h4>
+                <p>Define matchups round-by-round, then optionally auto-fill the remaining rounds.</p>
+              </div>
+            </div>
+            <div class="schedule-option" @click="onGenerateSchedule">
+              <div class="schedule-option-icon">⚡</div>
+              <div>
+                <h4>Auto-Generate All Rounds</h4>
+                <p>Build a full balanced schedule automatically from all registered teams.</p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Settings tab (was Actions) -->
+      <div v-show="adminTab === 'actions'" class="workflow-body">
+        <div v-if="!selectedTournamentId" class="empty-panel">Select a tournament to manage its settings.</div>
+        <template v-else>
+          <!-- Status -->
+          <div class="action-group">
+            <div class="action-group-title">Tournament Status</div>
+            <div class="action-row">
+              <div class="action-row-info">
+                <h4>Current Status</h4>
+                <p v-if="selectedTournament">
+                  <span class="t-status-chip" :class="statusClass(selectedTournament.Status)">{{ selectedTournament.Status }}</span>
+                </p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onSetStatus('DRAFT')"     class="btn-xs-warning">Draft</button>
+                <button @click="onSetStatus('ACTIVE')"    class="btn-xs-success">Active</button>
+                <button @click="onSetStatus('COMPLETED')" class="btn-xs-outline">Completed</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Visibility -->
+          <div class="action-group">
+            <div class="action-group-title">Visibility</div>
+            <div class="action-row">
+              <div class="action-row-info">
+                <h4>Public Access</h4>
+                <p>{{ selectedTournament && selectedTournament.PublicVisible ? 'Visible to everyone.' : 'Private — only admins can see it.' }}</p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onTogglePublic" class="btn-xs-primary">
+                  {{ selectedTournament && selectedTournament.PublicVisible ? 'Make Private' : 'Make Public' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bracket (Elementary only) -->
+          <div v-if="selectedTournament && selectedTournament.Format === 'ELEMENTARY_GROUP_BRACKET'" class="action-group">
+            <div class="action-group-title">Playoff Bracket</div>
+            <div class="action-row">
+              <div class="action-row-info">
+                <h4>Generate Bracket</h4>
+                <p>Seeds top-4 standings into Semifinals and Final.</p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onGenerateBracket(false)" class="btn-xs-primary">🏆 Generate</button>
+                <button @click="onGenerateBracket(true)"  class="btn-xs-outline">Force</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Data -->
+          <div class="action-group">
+            <div class="action-group-title">Data</div>
+            <div class="action-row">
+              <div class="action-row-info">
+                <h4>Rebuild Standings</h4>
+                <p>Recalculates all standings from recorded game scores.</p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onRebuildStandings" class="btn-xs-outline">Rebuild</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Danger Zone -->
+          <div class="action-group">
+            <div class="danger-zone">
+              <div class="danger-zone-title">⚠ Danger Zone</div>
+              <p>Permanently deletes the tournament plus all its teams, games, and standings. This cannot be undone.</p>
+              <button @click="onDeleteTournament" class="btn-danger">Delete Tournament</button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Schools tab -->
+      <div v-show="adminTab === 'schools'" class="workflow-body">
+        <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+          <h3 class="section-title">Manage Schools</h3>
+          <div class="flex flex-wrap items-center gap-3">
+            <select v-model="schoolFilter.level" class="form-select-sm">
+              <option value="">All Levels</option>
+              <option>Elementary</option><option>Middle</option><option>High</option>
+            </select>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" v-model="schoolFilter.showInactive" class="form-checkbox" />
+              <span class="text-sm" style="color:#4b5563">Show inactive</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto mb-6">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:70px">Short</th>
+                <th style="width:110px">Level</th>
+                <th class="hidden lg:table-cell">Logo URL</th>
+                <th style="width:62px;text-align:center">Active</th>
+                <th style="width:100px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!filteredSchools.length">
+                <td colspan="6" class="empty-row">No schools found</td>
+              </tr>
+              <template v-for="s in filteredSchools" :key="s.SchoolID">
+                <!-- Edit row -->
+                <tr v-if="schoolsEditingId === s.SchoolID" class="table-row" style="background:#f5f3ff">
+                  <td><input v-model="editSchool.name"  class="form-input-sm w-full" /></td>
+                  <td><input v-model="editSchool.short" class="form-input-sm" style="width:62px" /></td>
+                  <td>
+                    <select v-model="editSchool.level" class="form-select-sm">
+                      <option>Elementary</option><option>Middle</option><option>High</option>
+                    </select>
+                  </td>
+                  <td class="hidden lg:table-cell">
+                    <input v-model="editSchool.logo" class="form-input-sm w-full" placeholder="URL" />
+                  </td>
+                  <td class="text-center">
+                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-muted'">
+                      {{ s.IsActive ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button @click="onSaveSchoolEdit(s)"  class="btn-xs-primary">Save</button>
+                      <button @click="onCancelSchoolEdit"   class="btn-xs-ghost">✕</button>
+                    </div>
+                  </td>
+                </tr>
+                <!-- View row -->
+                <tr v-else class="table-row" :class="{'row-inactive': !s.IsActive}">
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <img v-if="s.LogoURL" :src="s.LogoURL" class="team-logo-sm" @error="$event.target.style.display='none'" />
+                      <span class="font-medium" style="color:#111827">{{ s.SchoolName }}</span>
+                    </div>
+                  </td>
+                  <td class="text-xs" style="color:#6b7280">{{ s.SchoolShortName }}</td>
+                  <td>
+                    <span class="level-badge" :class="'level-'+(s.Level||'').toLowerCase()">{{ s.Level }}</span>
+                  </td>
+                  <td class="hidden lg:table-cell text-xs truncate" style="color:#9ca3af;max-width:200px">
+                    {{ s.LogoURL || '—' }}
+                  </td>
+                  <td class="text-center">
+                    <span class="badge" :class="s.IsActive ? 'badge-success' : 'badge-muted'">
+                      {{ s.IsActive ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button @click="startEditSchool(s)" class="btn-xs-outline" title="Edit">✎</button>
+                      <button @click="onToggleSchoolActive(s)" class="btn-xs-outline"
+                        :title="s.IsActive ? 'Deactivate' : 'Reactivate'">
+                        {{ s.IsActive ? '⊘' : '↺' }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add school -->
+        <div class="pt-4" style="border-top:1px solid #f3f4f6">
+          <h4 class="text-sm font-semibold mb-3" style="color:#374151">Add New School</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input v-model="newSchool.name"  class="form-input" placeholder="School Name *" />
+            <input v-model="newSchool.short" class="form-input" placeholder="Short Name" />
+            <select v-model="newSchool.level" class="form-select">
+              <option>Elementary</option><option>Middle</option><option>High</option>
+            </select>
+            <input v-model="newSchool.logo"  class="form-input" placeholder="Logo URL (optional)" />
+          </div>
+          <button @click="onAddSchool" class="btn-primary mt-3">+ Add School</button>
+        </div>
+      </div>
+    </div><!-- /admin-panel -->
+
+    <!-- View tabs -->
+    <div v-if="selectedTournamentId && hasData" class="view-tabs-bar mb-5">
+      <button v-for="tab in viewTabs" :key="tab.key"
+        v-show="tab.key !== 'bracket' || hasBracket"
+        @click="currentView = tab.key"
+        class="view-tab" :class="{'view-tab-active': currentView === tab.key}">
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <!-- Overview view -->
+    <div v-if="selectedTournamentId && currentView === 'overview'">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- Standings summary -->
+        <div class="card">
+          <h2 class="section-title mb-4">Standings</h2>
+          <div v-if="!standings.length" class="empty-panel">No standings data yet</div>
+          <div v-else>
+            <div v-for="(row, i) in standings" :key="row.TeamID" class="standings-row">
+              <span class="standings-rank" :class="{'top-3': i < 3}">{{ row.Rank }}</span>
+              <img v-if="teamsMap[row.TeamID] && teamsMap[row.TeamID].logoUrl"
+                   :src="teamsMap[row.TeamID].logoUrl" class="standings-team-logo"
+                   @error="$event.target.style.display='none'" />
+              <span class="standings-team-name">{{ teamNameFor(row.TeamID) }}</span>
+              <div class="standings-stats">
+                <span class="standings-stat" style="color:#059669">{{ row.Wins }}W</span>
+                <span class="standings-stat" style="color:#dc2626">{{ row.Losses }}L</span>
+                <span class="standings-stat hidden sm:block" style="color:#9ca3af">{{ row.PointDiff >= 0 ? '+' : '' }}{{ row.PointDiff }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent games -->
+        <div class="card lg:col-span-2">
+          <h2 class="section-title mb-4">Recent Group Games</h2>
+          <div v-if="!recentRounds.length" class="empty-panel">No games scheduled yet</div>
+          <div v-else>
+            <div v-for="grp in recentRounds" :key="grp.round" class="mb-5">
+              <div class="round-label">Round {{ grp.round }}</div>
+              <div class="space-y-2 mt-2">
+                <game-row v-for="game in grp.games" :key="game.GameID"
+                  :game="game" :teams-map="teamsMap"
+                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  @save-score="onSaveScore" @edit-game="openEditGameModal">
+                </game-row>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Standings view -->
+    <div v-if="selectedTournamentId && currentView === 'standings'" class="card">
+      <h2 class="section-title mb-5">Full Standings</h2>
+      <div v-if="!standings.length" class="empty-panel">No standings data</div>
+      <div v-else class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th style="width:36px"></th>
+              <th>Team</th>
+              <th class="text-center">W</th><th class="text-center">L</th>
+              <th class="text-center hidden sm:table-cell">PF</th>
+              <th class="text-center hidden sm:table-cell">PA</th>
+              <th class="text-center hidden md:table-cell">+/−</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in standings" :key="row.TeamID" class="table-row">
+              <td class="font-bold" style="color:#d1d5db">{{ row.Rank }}</td>
+              <td>
+                <img v-if="teamsMap[row.TeamID] && teamsMap[row.TeamID].logoUrl"
+                     :src="teamsMap[row.TeamID].logoUrl" class="standings-team-logo"
+                     @error="$event.target.style.display='none'" />
+              </td>
+              <td class="font-medium" style="color:#111827">{{ teamNameFor(row.TeamID) }}</td>
+              <td class="text-center font-semibold" style="color:#059669">{{ row.Wins }}</td>
+              <td class="text-center font-semibold" style="color:#dc2626">{{ row.Losses }}</td>
+              <td class="text-center hidden sm:table-cell" style="color:#4b5563">{{ row.PointsFor }}</td>
+              <td class="text-center hidden sm:table-cell" style="color:#4b5563">{{ row.PointsAgainst }}</td>
+              <td class="text-center hidden md:table-cell font-medium"
+                :style="row.PointDiff >= 0 ? 'color:#059669' : 'color:#dc2626'">
+                {{ row.PointDiff >= 0 ? '+' + row.PointDiff : row.PointDiff }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- All games view -->
+    <div v-if="selectedTournamentId && currentView === 'games'" class="card">
+      <div class="bulk-view-header">
+        <h2 class="section-title">Group Stage Games</h2>
+        <div v-if="isAdminView" class="bulk-toggle-group">
+          <button @click="bulkMode = false" class="bulk-toggle-btn" :class="{ 'bulk-toggle-active': !bulkMode }">🎴 Card View</button>
+          <button @click="bulkMode = true"  class="bulk-toggle-btn" :class="{ 'bulk-toggle-active': bulkMode  }">📋 Bulk Entry</button>
+        </div>
+      </div>
+
+      <div v-if="!allRounds.length" class="empty-panel">No games scheduled yet</div>
+
+      <!-- ── Card view (default) ── -->
+      <div v-else-if="!isAdminView || !bulkMode">
+        <div v-for="grp in allRounds" :key="grp.round" class="mb-6">
+          <div class="round-label">Round {{ grp.round }}</div>
+          <div class="space-y-2 mt-2">
+            <game-row v-for="game in grp.games" :key="game.GameID"
+              :game="game" :teams-map="teamsMap"
+              :is-admin="isAdminView" :score-edits="scoreEdits"
+              @save-score="onSaveScore" @edit-game="openEditGameModal">
+            </game-row>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Bulk entry table (admin only) ── -->
+      <div v-else>
+        <div class="bulk-save-bar">
+          <span class="bulk-save-hint">Fill in scores below, then save all at once.</span>
+          <button @click="onSaveAllScores" class="btn-primary">✓ Save All Scores</button>
+        </div>
+        <div v-for="grp in allRounds" :key="grp.round" class="mb-6">
+          <div class="round-label">Round {{ grp.round }}</div>
+          <table class="bulk-table mt-2">
+            <thead>
+              <tr>
+                <th class="bulk-th">#</th>
+                <th class="bulk-th bulk-th-team">Team A</th>
+                <th class="bulk-th bulk-th-score" colspan="3">Score</th>
+                <th class="bulk-th bulk-th-team">Team B</th>
+                <th class="bulk-th">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(game, idx) in grp.games" :key="game.GameID"
+                  :class="{ 'bulk-row-done': game.IsComplete }">
+                <td class="bulk-td bulk-td-num">{{ idx + 1 }}</td>
+                <td class="bulk-td bulk-td-team">
+                  <div class="bulk-team-cell">
+                    <img v-if="teamsMap[game.TeamA_ID] && teamsMap[game.TeamA_ID].logoUrl"
+                         :src="teamsMap[game.TeamA_ID].logoUrl"
+                         class="bulk-team-logo" loading="lazy"
+                         @error="$event.target.style.display='none'" />
+                    <span class="bulk-team-name">{{ teamsMap[game.TeamA_ID] ? teamsMap[game.TeamA_ID].TeamName : game.TeamA_ID }}</span>
+                  </div>
+                </td>
+                <td class="bulk-td bulk-td-score">
+                  <input type="number" v-model="scoreEdits[game.GameID].a"
+                         class="bulk-score-inp" min="0" placeholder="–" />
+                </td>
+                <td class="bulk-td bulk-td-vs">:</td>
+                <td class="bulk-td bulk-td-score">
+                  <input type="number" v-model="scoreEdits[game.GameID].b"
+                         class="bulk-score-inp" min="0" placeholder="–" />
+                </td>
+                <td class="bulk-td bulk-td-team">
+                  <div class="bulk-team-cell bulk-team-right">
+                    <span class="bulk-team-name">{{ teamsMap[game.TeamB_ID] ? teamsMap[game.TeamB_ID].TeamName : game.TeamB_ID }}</span>
+                    <img v-if="teamsMap[game.TeamB_ID] && teamsMap[game.TeamB_ID].logoUrl"
+                         :src="teamsMap[game.TeamB_ID].logoUrl"
+                         class="bulk-team-logo" loading="lazy"
+                         @error="$event.target.style.display='none'" />
+                  </div>
+                </td>
+                <td class="bulk-td bulk-td-status">
+                  <span v-if="game.IsComplete" class="bulk-status-done">✓ Done</span>
+                  <span v-else class="bulk-status-pending">Pending</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="bulk-save-bar mt-4">
+          <span></span>
+          <button @click="onSaveAllScores" class="btn-primary">✓ Save All Scores</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bracket view -->
+    <div v-if="selectedTournamentId && currentView === 'bracket' && hasBracket">
+
+      <div class="bracket-header">
+        <h2 class="bracket-title">🏆 Elimination Bracket</h2>
+        <p class="bracket-subtitle" v-if="bracketTree.qf.length">Quarterfinals · Semifinals · Final</p>
+        <p class="bracket-subtitle" v-else>Semifinals · Final</p>
+      </div>
+
+      <div class="bracket-ladder">
+
+        <!-- ── QF Round (8-team only) ── -->
+        <div v-if="bracketTree.qf.length" class="bracket-rnd">
+          <div class="bracket-rnd-header">
+            <span class="bracket-rnd-label">Quarterfinals</span>
+            <span class="bracket-rnd-desc">Top 8 seeds · 4 games</span>
+          </div>
+          <div class="bracket-qf-grid">
+            <!-- Pair 1 → SF 1 -->
+            <div class="bracket-pair">
+              <div class="bracket-pair-tag">Group 1 · winner advances to SF 1</div>
+              <div class="bracket-match" v-if="bracketTree.qf[0]">
+                <div class="bracket-round-tag">{{ bracketTree.qf[0].GameLabel }}</div>
+                <game-row :game="bracketTree.qf[0]" :teams-map="teamsMap"
+                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  @save-score="onSaveScore" @edit-game="openEditGameModal" />
+              </div>
+              <div class="bracket-match" v-if="bracketTree.qf[1]">
+                <div class="bracket-round-tag">{{ bracketTree.qf[1].GameLabel }}</div>
+                <game-row :game="bracketTree.qf[1]" :teams-map="teamsMap"
+                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  @save-score="onSaveScore" @edit-game="openEditGameModal" />
+              </div>
+            </div>
+            <!-- Pair 2 → SF 2 -->
+            <div class="bracket-pair">
+              <div class="bracket-pair-tag">Group 2 · winner advances to SF 2</div>
+              <div class="bracket-match" v-if="bracketTree.qf[2]">
+                <div class="bracket-round-tag">{{ bracketTree.qf[2].GameLabel }}</div>
+                <game-row :game="bracketTree.qf[2]" :teams-map="teamsMap"
+                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  @save-score="onSaveScore" @edit-game="openEditGameModal" />
+              </div>
+              <div class="bracket-match" v-if="bracketTree.qf[3]">
+                <div class="bracket-round-tag">{{ bracketTree.qf[3].GameLabel }}</div>
+                <game-row :game="bracketTree.qf[3]" :teams-map="teamsMap"
+                  :is-admin="isAdminView" :score-edits="scoreEdits"
+                  @save-score="onSaveScore" @edit-game="openEditGameModal" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Advance arrow ── -->
+        <div v-if="bracketTree.qf.length" class="bracket-advance-arrow">
+          <div class="bracket-arrow-line"></div>
+          <span class="bracket-arrow-label">winners advance</span>
+          <div class="bracket-arrow-line"></div>
+        </div>
+
+        <!-- ── SF Round ── -->
+        <div class="bracket-rnd">
+          <div class="bracket-rnd-header">
+            <span class="bracket-rnd-label">Semifinals</span>
+            <span class="bracket-rnd-desc">2 games · winners meet in the Final</span>
+          </div>
+          <div class="bracket-sf-grid">
+            <div class="bracket-match" v-if="bracketTree.sf[0]">
+              <div class="bracket-round-tag">SF 1</div>
+              <game-row :game="bracketTree.sf[0]" :teams-map="teamsMap"
+                :is-admin="isAdminView" :score-edits="scoreEdits"
+                @save-score="onSaveScore" @edit-game="openEditGameModal" />
+            </div>
+            <div class="bracket-match" v-if="bracketTree.sf[1]">
+              <div class="bracket-round-tag">SF 2</div>
+              <game-row :game="bracketTree.sf[1]" :teams-map="teamsMap"
+                :is-admin="isAdminView" :score-edits="scoreEdits"
+                @save-score="onSaveScore" @edit-game="openEditGameModal" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Advance arrow ── -->
+        <div class="bracket-advance-arrow">
+          <div class="bracket-arrow-line"></div>
+          <span class="bracket-arrow-label">finalists</span>
+          <div class="bracket-arrow-line"></div>
+        </div>
+
+        <!-- ── Final ── -->
+        <div class="bracket-rnd">
+          <div class="bracket-rnd-header">
+            <span class="bracket-rnd-label">🏆 Championship Final</span>
+          </div>
+          <div class="bracket-final-wrap" v-if="bracketTree.final">
+            <div class="bracket-match bracket-match-final">
+              <div class="bracket-round-tag bracket-round-tag-final">🏆 Final</div>
+              <game-row :game="bracketTree.final" :teams-map="teamsMap"
+                :is-admin="isAdminView" :score-edits="scoreEdits"
+                @save-score="onSaveScore" @edit-game="openEditGameModal" />
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /bracket-ladder -->
+    </div><!-- /bracket view -->
+
+    <!-- Empty state -->
+    <div v-if="!selectedTournamentId || (!hasData && selectedTournamentId && !isAdminView)"
+      class="text-center py-16">
+      <div class="empty-icon">🏆</div>
+      <h2 class="text-xl font-semibold mt-4 mb-2" style="color:#111827">
+        {{ tournaments.length === 0 ? 'No Tournaments Yet' : 'Select a Tournament' }}
+      </h2>
+      <p class="text-sm" style="color:#9ca3af">
+        {{ !isAdminView && tournaments.length === 0
+          ? 'Check back soon — no active tournaments available.'
+          : isAdminView && tournaments.length === 0
+            ? 'Click "+ New Tournament" above to get started.'
+            : 'Pick a tournament from the dropdown.' }}
+      </p>
+    </div>
+
+  </main>
+
+  <!-- Login modal -->
+  <div v-if="showLoginModal" class="modal-overlay" @click.self="showLoginModal = false">
+    <div class="modal-box" style="max-width:380px">
+      <h3 class="text-xl font-bold mb-1" style="color:#111827">Admin Login</h3>
+      <p class="text-sm mb-5" style="color:#9ca3af">Sign in to manage tournaments.</p>
+
+      <div v-if="loginForm.error" class="error-alert mb-4">{{ loginForm.error }}</div>
+
+      <div class="mb-4">
+        <label class="form-label">Username</label>
+        <input v-model="loginForm.username" type="text" class="form-input"
+          placeholder="Username" autocomplete="username" @keydown.enter="onLoginSubmit" />
+      </div>
+      <div class="mb-5">
+        <label class="form-label">Password</label>
+        <div class="relative">
+          <input v-model="loginForm.password" :type="loginForm.showPw ? 'text' : 'password'"
+            class="form-input" style="padding-right:42px" placeholder="Password"
+            autocomplete="current-password" @keydown.enter="onLoginSubmit" />
+          <button type="button" @click="loginForm.showPw = !loginForm.showPw" class="pw-toggle-btn">
+            <svg v-if="!loginForm.showPw" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <button @click="onLoginSubmit"          class="btn-primary w-full mb-2">Sign In</button>
+      <button @click="showLoginModal = false"  class="btn-ghost w-full">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Edit game modal -->
+  <div v-if="editModal.show" class="modal-overlay" @click.self="editModal.show = false">
+    <div class="modal-box" style="max-width:380px">
+      <h3 class="text-xl font-bold mb-4" style="color:#111827">Edit Game Teams</h3>
+      <div class="mb-4">
+        <label class="form-label">Team A</label>
+        <select v-model="editModal.teamA" class="form-select">
+          <option value="">— Select Team —</option>
+          <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+        </select>
+      </div>
+      <div class="mb-5">
+        <label class="form-label">Team B</label>
+        <select v-model="editModal.teamB" class="form-select">
+          <option value="">— Select Team —</option>
+          <option v-for="t in teams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+        </select>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button @click="editModal.show = false" class="btn-ghost">Cancel</button>
+        <button @click="onSaveGameTeams"        class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Match Builder Modal -->
+  <div v-if="showMatchBuilder" class="modal-overlay" @click.self="showMatchBuilder = false">
+    <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Custom Match Builder</h2>
+        <button @click="showMatchBuilder = false" class="btn-ghost" style="padding:4px 8px">✕</button>
+      </div>
+
+      <!-- Validation warnings -->
+      <div v-if="validationWarnings.length" class="mb-4 p-3 rounded-lg" style="background:#fff7ed;border:1px solid #fed7aa">
+        <div class="font-semibold text-sm mb-1" style="color:#c2410c">⚠ Scheduling conflicts</div>
+        <ul class="text-sm space-y-1" style="color:#9a3412">
+          <li v-for="(w, idx) in validationWarnings" :key="idx">
+            Round {{ w.round }}, Match {{ w.matchupIndex + 1 }}: {{ w.errors.join('; ') }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Available teams reference -->
+      <div class="mb-5">
+        <p class="text-xs font-semibold uppercase mb-2" style="color:#6b7280;letter-spacing:.05em">Available Teams</p>
+        <div class="flex flex-wrap gap-2">
+          <span v-for="t in availableTeams" :key="t.TeamID"
+                class="badge" style="background:#ede9fe;color:#4f46e5;border:1px solid #c4b5fd">
+            {{ t.TeamName }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Rounds -->
+      <div class="space-y-5 mb-5">
+        <div v-for="round in matchBuilderRounds" :key="round.roundNumber">
+          <div class="flex items-center justify-between mb-2">
+            <span class="round-label">Round {{ round.roundNumber }}</span>
+            <button @click="addMatchupSlot(round)" class="btn-outline" style="padding:2px 10px;font-size:0.78rem">+ Matchup</button>
+          </div>
+
+          <div class="space-y-2">
+            <div v-for="(matchup, idx) in round.matchups" :key="idx"
+                 class="flex items-center gap-2 p-2 rounded-lg"
+                 :style="getMatchupErrors(matchup, round.roundNumber).length ? 'background:#fef2f2;border:1px solid #fca5a5' : 'background:#f9fafb;border:1px solid #e5e7eb'">
+              <select v-model="matchup.TeamA_ID" class="form-select" style="flex:1">
+                <option value="">— Team A —</option>
+                <option v-for="t in availableTeams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+              </select>
+              <span class="text-xs font-bold" style="color:#9ca3af">vs</span>
+              <select v-model="matchup.TeamB_ID" class="form-select" style="flex:1">
+                <option value="">— Team B —</option>
+                <option v-for="t in availableTeams" :key="t.TeamID" :value="t.TeamID">{{ t.TeamName }}</option>
+              </select>
+              <button @click="removeMatchup(round, idx)" class="btn-ghost" style="padding:4px 8px;color:#ef4444" title="Remove">✕</button>
+            </div>
+            <p v-if="!round.matchups.length" class="text-sm" style="color:#9ca3af">No matchups — click + Matchup to add.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save actions -->
+      <div class="flex flex-wrap justify-end gap-2 pt-4" style="border-top:1px solid #e5e7eb">
+        <button @click="showMatchBuilder = false" class="btn-ghost">Cancel</button>
+        <button @click="saveCustomSchedule(false)" class="btn-outline"
+                :disabled="validationWarnings.length > 0">Save Custom Only</button>
+        <button @click="saveCustomSchedule(true)" class="btn-primary"
+                :disabled="validationWarnings.length > 0">Save + Auto-fill Rest</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- Scripts (order matters) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="js/db.js?v=6"></script>
+<script src="js/api.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
+</body>
+</html>

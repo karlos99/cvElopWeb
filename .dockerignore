@@ -1,0 +1,7 @@
+# Docker build context — exclude files not needed inside the image
+scripts/
+.git/
+.gitignore
+*.md
+schools.csv
+docker-compose.yml
