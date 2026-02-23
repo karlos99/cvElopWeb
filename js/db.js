@@ -5,8 +5,7 @@
  *
  * Initialisation priority:
  *   1. localStorage  — restores a previously saved user session
- *   2. /app.db       — server-side pre-built SQLite file (schema + seed data)
- *   3. Blank DB      — fallback when running without a web server
+ *   2. Blank DB      — fresh schema seeded with SEED_SCHOOLS inline data
  *
  * The database is persisted to localStorage as a binary byte array so
  * data survives page reloads without any server or Node.js.
@@ -26,6 +25,28 @@ var DB = (function () {
   var _db  = null;
   var _SQL = null;
   var STORAGE_KEY = 'cdElop26_db_v1';
+
+  /* ── school seed data ─────────────────────────────────────────── */
+  var SEED_SCHOOLS = [
+    { id: 'SCH_386c2dfb1f87', name: 'Cesar Chavez',           short: 'CC',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/CC_logo@3x_1749069437.png' },
+    { id: 'SCH_9cc2338da6bb', name: 'Coral Mountain',         short: 'CMA', level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/CMA_logo@3x_1749069438.png' },
+    { id: 'SCH_bd64324c1d01', name: 'John Kelley',            short: 'JK',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/JK_logo@3x_1749069439.png' },
+    { id: 'SCH_56297ad34f65', name: 'Las Palmitas',           short: 'LP',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/canva_93356.png' },
+    { id: 'SCH_06d5911145b1', name: 'Mecca',                  short: 'MA',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/M_logo@3x_1749069440.png' },
+    { id: 'SCH_d5f7b302ee5b', name: 'Mountain Vista',         short: 'MV',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/MV_logo@3x_1749069206.png' },
+    { id: 'SCH_7941531f4a15', name: 'Oasis',                  short: 'OA',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/O_logo@3x_1749069440.png' },
+    { id: 'SCH_1da1b88dc9ef', name: 'Palm View',              short: 'PV',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/PV_logo@2x_1749069441.png' },
+    { id: 'SCH_a5faabb21063', name: 'Peter Pendleton',        short: 'PP',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/PP_logo@2x_1749069441.png' },
+    { id: 'SCH_04a8f5851e9b', name: 'Saul Martinez',          short: 'SM',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/SM_logo@2x_1749069441.png' },
+    { id: 'SCH_baa0073e4774', name: 'Sea View',               short: 'SV',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/SV_logo@3x_1749069441.png' },
+    { id: 'SCH_605eb559addd', name: 'Valle del Sol',          short: 'VDS', level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/VDS_logo@3x_1749069448.png' },
+    { id: 'SCH_7cf27e194323', name: 'Valley View',            short: 'VV',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/VV_logoSq4_1749069208.png' },
+    { id: 'SCH_ab10640ab04e', name: 'Westside',               short: 'WS',  level: 'Elementary', logo: 'https://files.smartsites.parentsquare.com/9154/W_logo@3x_1749069208.png' },
+    { id: 'SCH_c331282a101c', name: 'Bobby Duke',             short: 'BD',  level: 'Middle',     logo: 'https://files.smartsites.parentsquare.com/9154/BB_logo@3x_1749069437.png' },
+    { id: 'SCH_f02a2adb02af', name: 'Cahuilla Desert Academy',short: 'CDA', level: 'Middle',     logo: 'https://files.smartsites.parentsquare.com/9154/CDA_logo@3x_1749069203.png' },
+    { id: 'SCH_fbeebc7b32b6', name: 'Toro Canyon',            short: 'TC',  level: 'Middle',     logo: 'https://files.smartsites.parentsquare.com/9154/TC_logo@3x_1749069442.png' },
+    { id: 'SCH_39c86450c3f1', name: 'West Shores',            short: 'WSH', level: 'Middle',     logo: '' }
+  ];
 
   /* ── schema DDL ──────────────────────────────────────────────── */
   var SCHEMA_SQL = [
@@ -126,9 +147,7 @@ var DB = (function () {
      * database using the following priority:
      *
      *   1. localStorage  — user's persisted session from a previous visit
-     *   2. /app.db       — pre-built SQLite file served by the web server
-     *                      (contains schema + all district schools)
-     *   3. Blank DB      — fallback for local file:// development
+     *   2. Blank DB      — fresh schema + SEED_SCHOOLS inserted inline
      *
      * Always ensures the schema tables exist (CREATE TABLE IF NOT EXISTS).
      */
@@ -152,55 +171,29 @@ var DB = (function () {
         }
       }
 
-      /* ── Priority 2: fetch /app.db from the server ── */
+      /* ── Priority 2: fresh DB — create schema + seed schools ── */
       if (!saved) {
-        try {
-          var resp = await fetch('app.db', { cache: 'no-store' });
-          if (resp.ok) {
-            var buf  = await resp.arrayBuffer();
-            _db = new _SQL.Database(new Uint8Array(buf));
-            console.log('[DB] Loaded from app.db (' + (buf.byteLength / 1024).toFixed(1) + ' KB)');
-          } else {
-            throw new Error('HTTP ' + resp.status);
-          }
-        } catch (e) {
-          console.warn('[DB] Could not fetch app.db — starting blank:', e);
-          _db = new _SQL.Database();
-        }
-      }
+        _db = new _SQL.Database();
+        _db.exec(SCHEMA_SQL);
+        SEED_SCHOOLS.forEach(function (s) {
+          _db.run(
+            'INSERT OR IGNORE INTO Schools (SchoolID, SchoolName, SchoolShortName, Level, LogoURL, IsActive) VALUES (?,?,?,?,?,1)',
+            [s.id, s.name, s.short, s.level, s.logo]
+          );
+        });
+        console.log('[DB] Fresh DB — seeded ' + SEED_SCHOOLS.length + ' schools');
+      } else {
+        /* ensure all tables exist on an existing localStorage DB */
+        _db.exec(SCHEMA_SQL);
 
-      /* ensure all tables exist (idempotent — safe to run on any DB) */
-      _db.exec(SCHEMA_SQL);
-
-      /* ── Logo sync: if any school is missing a logo, pull URLs from app.db ── *
-       * Handles the case where localStorage was saved before logos were added   *
-       * to the seed data. Matches by SchoolName (stable) not by SchoolID (uuid).*
-       * Only fetches app.db when actually needed.                               */
-      if (saved) {
-        try {
-          var logoCheck = _db.exec("SELECT COUNT(*) FROM Schools WHERE LogoURL = '' OR LogoURL IS NULL");
-          var missingCount = (logoCheck.length && logoCheck[0].values.length) ? logoCheck[0].values[0][0] : 0;
-          if (missingCount > 0) {
-            var lresp = await fetch('app.db', { cache: 'no-store' });
-            if (lresp.ok) {
-              var lbuf     = await lresp.arrayBuffer();
-              var freshDb  = new _SQL.Database(new Uint8Array(lbuf));
-              var lresult  = freshDb.exec("SELECT SchoolName, LogoURL FROM Schools WHERE LogoURL != ''");
-              if (lresult.length) {
-                toObjects(lresult[0]).forEach(function (s) {
-                  _db.run(
-                    "UPDATE Schools SET LogoURL = ? WHERE SchoolName = ? AND (LogoURL = '' OR LogoURL IS NULL)",
-                    [s.LogoURL, s.SchoolName]
-                  );
-                });
-                console.log('[DB] Synced ' + missingCount + ' school logo(s) from app.db');
-              }
-              freshDb.close();
-            }
-          }
-        } catch (e) {
-          console.warn('[DB] Could not sync school logos:', e);
-        }
+        /* sync any missing/outdated logos from SEED_SCHOOLS inline data */
+        SEED_SCHOOLS.forEach(function (s) {
+          if (!s.logo) return;
+          _db.run(
+            "UPDATE Schools SET LogoURL = ? WHERE SchoolID = ? AND (LogoURL = '' OR LogoURL IS NULL)",
+            [s.logo, s.id]
+          );
+        });
       }
 
       this.save();
