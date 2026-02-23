@@ -14,6 +14,7 @@ LABEL description="Static site served by nginx — mirrors Hostinger nginx hosti
 COPY index.html       /usr/share/nginx/html/index.html
 COPY css/             /usr/share/nginx/html/css/
 COPY js/              /usr/share/nginx/html/js/
+COPY images/          /usr/share/nginx/html/images/
 COPY app.db           /usr/share/nginx/html/app.db
 
 # ── Nginx configuration ───────────────────────────────────────────────────────

@@ -78,7 +78,8 @@ var API = (function () {
 
   /**
    * Elementary schedule generator: max 3 rounds, circle method, no repeated matchups.
-   * One team gets a standing BYE if team count is odd.
+   * BYE is treated as a real rotating participant so different teams get the BYE
+   * each round — no team receives a BYE more than once.
    * Returns game objects with Stage='GROUP'.
    */
   function generateElementarySchedule(teams, tournamentId) {
@@ -86,24 +87,19 @@ var API = (function () {
     var teamList = teams.slice();
     var numTeams = teamList.length;
     var maxRounds = 3;
-    var byeTeamId = null;
 
+    /* Add BYE as a real rotating slot when team count is odd */
     if (numTeams % 2 !== 0) {
-      var randomIndex = Math.floor(Math.random() * numTeams);
-      byeTeamId = teamList[randomIndex].TeamID;
-      teamList.splice(randomIndex, 1);
-      numTeams = teamList.length;
+      teamList.push({ TeamID: 'BYE', TeamName: 'BYE' });
+      numTeams++;
     }
 
-    for (var round = 1; round <= maxRounds; round++) {
-      if (byeTeamId) {
-        games.push({
-          GameID: newId('G'), TournamentID: tournamentId, Stage: 'GROUP',
-          RoundNumber: round,
-          GameLabel: 'GROUP R' + round + ' G' + (games.length + 1),
-          TeamA_ID: byeTeamId, TeamB_ID: 'BYE'
-        });
-      }
+    /* Circle method generates N-1 rounds with no repeated matchups.
+       Cap at maxRounds. */
+    var totalPossibleRounds = numTeams - 1;
+    var roundsToGenerate = Math.min(maxRounds, totalPossibleRounds);
+
+    for (var round = 1; round <= roundsToGenerate; round++) {
       for (var i = 0; i < numTeams / 2; i++) {
         var teamA = teamList[i];
         var teamB = teamList[numTeams - 1 - i];
@@ -114,7 +110,8 @@ var API = (function () {
           TeamA_ID: teamA.TeamID, TeamB_ID: teamB.TeamID
         });
       }
-      if (round < maxRounds) {
+      /* Rotate: keep index 0 fixed, rotate the rest */
+      if (round < roundsToGenerate) {
         var lastTeam = teamList.pop();
         teamList.splice(1, 0, lastTeam);
       }
@@ -148,6 +145,7 @@ var API = (function () {
 
   /**
    * Auto-fill remaining GROUP games (ELEMENTARY_GROUP_BRACKET, 3-round cap).
+   * BYE is treated as a real rotating participant so it is not duplicated.
    * Respects customMatchups already placed (avoids re-using those pairs).
    * Uses backtracking first, then greedy fallback.
    */
@@ -156,27 +154,24 @@ var API = (function () {
     var teamList = teams.slice();
     var numTeams = teamList.length;
     var maxRounds = 3;
-    var byeTeamId = null;
 
+    /* Add BYE as a real rotating slot — treated just like any other team */
     if (numTeams % 2 !== 0) {
-      var ri = Math.floor(Math.random() * numTeams);
-      byeTeamId = teamList[ri].TeamID;
-      teamList.splice(ri, 1);
-      numTeams = teamList.length;
+      teamList.push({ TeamID: 'BYE', TeamName: 'BYE' });
+      numTeams++;
     }
 
-    /* build set of already-used pairs */
+    /* Build set of already-used pairs (BYE included as a real team) */
     var usedPairs = {};
     customMatchups = customMatchups || [];
     for (var m = 0; m < customMatchups.length; m++) {
       var mu = customMatchups[m];
-      if (mu.TeamA_ID && mu.TeamB_ID &&
-          String(mu.TeamA_ID) !== 'BYE' && String(mu.TeamB_ID) !== 'BYE') {
+      if (mu.TeamA_ID && mu.TeamB_ID) {
         usedPairs[[mu.TeamA_ID, mu.TeamB_ID].sort().join('-')] = true;
       }
     }
 
-    /* normalize per-round usage from manual matchups */
+    /* Per-round usage from already-placed manual matchups */
     var roundUsedMap = {};
     for (var rk in usedTeams) {
       if (!usedTeams.hasOwnProperty(rk)) continue;
@@ -184,7 +179,7 @@ var API = (function () {
       roundUsedMap[rn] = roundUsedMap[rn] || {};
       var urt = usedTeams[rk] || {};
       for (var tid in urt) {
-        if (urt.hasOwnProperty(tid) && String(tid) !== 'BYE') {
+        if (urt.hasOwnProperty(tid)) {
           roundUsedMap[rn][tid] = true;
         }
       }
@@ -192,16 +187,6 @@ var API = (function () {
 
     for (var round = 1; round <= maxRounds; round++) {
       roundUsedMap[round] = roundUsedMap[round] || {};
-
-      if (byeTeamId && !roundUsedMap[round][byeTeamId]) {
-        games.push({
-          GameID: newId('G'), TournamentID: tournamentId, Stage: 'GROUP',
-          RoundNumber: round,
-          GameLabel: 'GROUP R' + round + ' G' + (startGameNumber + games.length + 1),
-          TeamA_ID: byeTeamId, TeamB_ID: 'BYE'
-        });
-        roundUsedMap[round][byeTeamId] = true;
-      }
 
       var availableIds = teamList
         .map(function(t) { return t.TeamID; })
@@ -633,10 +618,10 @@ var API = (function () {
     },
 
     /** Change the two teams assigned to a game. */
-    updateGameTeams: function (gameId, teamA_Id, teamB_Id) {
+    updateGameTeams: function (gameId, teamA_Id, teamB_Id, location) {
       DB.run(
-        'UPDATE Games SET TeamA_ID = ?, TeamB_ID = ?, UpdatedAt = ? WHERE GameID = ?',
-        [teamA_Id, teamB_Id, now(), gameId]
+        'UPDATE Games SET TeamA_ID = ?, TeamB_ID = ?, Location = ?, UpdatedAt = ? WHERE GameID = ?',
+        [teamA_Id, teamB_Id, (location || '').trim(), now(), gameId]
       );
       var game = DB.queryOne('SELECT * FROM Games WHERE GameID = ?', [gameId]);
       if (game) API.rebuildStandings(game.TournamentID);

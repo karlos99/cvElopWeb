@@ -31,7 +31,7 @@
       scoreEdits:   { type: Object,  required: true },
       showLocation: { type: Boolean, default: false }
     },
-    emits: ['save-score', 'edit-game'],
+    emits: ['save-score', 'edit-game', 'open-school'],
     template: `
       <div class="game-card" :class="{'game-card-complete': game.IsComplete}">
 
@@ -44,13 +44,14 @@
 
           <!-- ── Team A ── -->
           <div class="game-team-col"
+               :style="game.TeamA_ID && game.TeamA_ID !== 'BYE' ? 'cursor:pointer' : ''"
+               @click="game.TeamA_ID && game.TeamA_ID !== 'BYE' && $emit('open-school', game.TeamA_ID)"
                :class="{ 'team-col-winner': game.IsComplete && numA > numB,
                          'team-col-loser':  game.IsComplete && numA < numB }">
             <div class="team-logo-wrap">
               <img v-if="logoA" :src="logoA" class="team-logo-lg" loading="lazy"
                    :alt="nameA" @error="$event.target.style.display='none'" />
               <div v-else class="team-logo-fallback">{{ nameA.charAt(0) }}</div>
-              <span v-if="game.IsComplete && numA > numB" class="winner-crown">🏆</span>
             </div>
             <span class="game-team-nm">{{ nameA }}</span>
           </div>
@@ -66,8 +67,8 @@
                 <input type="number" v-model="scoreEdits[game.GameID].b"
                        class="score-input-lg" min="0" />
               </div>
-              <button @click="$emit('save-score', game)" class="btn btn-success btn-xs mt-1" :disabled="isTied">✓ Save</button>
-              <div v-if="isTied" class="tie-warning">⚠ No ties allowed</div>
+              <button @click="$emit('save-score', game)" class="btn btn-success btn-xs mt-1" :disabled="isTied">Save</button>
+              <div v-if="isTied" class="tie-warning">No ties allowed</div>
             </template>
             <!-- Completed score display -->
             <div v-else-if="game.IsComplete" class="score-final">
@@ -83,26 +84,25 @@
             <div v-else class="score-pending">VS</div>
             <!-- Admin edit-teams button -->
             <button v-if="isAdmin" @click="$emit('edit-game', game)"
-              class="btn btn-ghost btn-square btn-xs" title="Edit teams" style="color:#d1d5db">✎</button>
+              class="btn btn-ghost btn-xs" title="Edit teams" style="color:#9ca3af">Edit</button>
           </div>
 
           <!-- ── Team B ── -->
           <div class="game-team-col"
+               :style="game.TeamB_ID && game.TeamB_ID !== 'BYE' ? 'cursor:pointer' : ''"
+               @click="game.TeamB_ID && game.TeamB_ID !== 'BYE' && $emit('open-school', game.TeamB_ID)"
                :class="{ 'team-col-winner': game.IsComplete && numB > numA,
                          'team-col-loser':  game.IsComplete && numB < numA }">
             <div class="team-logo-wrap">
               <img v-if="logoB" :src="logoB" class="team-logo-lg" loading="lazy"
                    :alt="nameB" @error="$event.target.style.display='none'" />
               <div v-else class="team-logo-fallback">{{ nameB.charAt(0) }}</div>
-              <span v-if="game.IsComplete && numB > numA" class="winner-crown">🏆</span>
             </div>
             <span class="game-team-nm">{{ nameB }}</span>
           </div>
 
         </div>
-        <div v-if="showLocation && game.Location" class="game-location">
-          📍 {{ game.Location }}
-        </div>
+        <div v-if="game.Location" class="game-location">📍 {{ game.Location }}</div>
       </div>
     `,
     computed: {
@@ -146,15 +146,13 @@
       const adminTabs = [
         { key: 'teams',    label: '1 · Teams'    },
         { key: 'schedule', label: '2 · Schedule' },
-        { key: 'actions',  label: '3 · Settings' },
-        { key: 'schools',  label: 'Schools'      },
-        { key: 'sports',   label: 'Sports'       }
+        { key: 'actions',  label: '3 · Settings' }
       ];
       const viewTabs = [
         { key: 'overview',  label: 'Overview'  },
         { key: 'standings', label: 'Standings' },
         { key: 'games',     label: 'Group Games' },
-        { key: 'bracket',   label: '🏆 Bracket' }
+        { key: 'bracket',   label: 'Bracket' }
       ];
 
       /* ── Reactive state ─────────────────────────────────── */
@@ -171,6 +169,8 @@
       const tournamentTeams    = ref([]);         // admin editable draft
       const currentView        = ref('overview');
       const adminTab           = ref('teams');
+      const appTab             = ref('schools');   // 'schools' | 'sports' | 'users'
+      const showAppSettings    = ref(false);
       const showCreateForm     = ref(false);
       const bulkMode           = ref(false);
       const showLoginModal     = ref(false);
@@ -195,6 +195,9 @@
       /* overview phase filter */
       const overviewPhase  = ref('');  // '' = group/rr, 'QF', 'SF', 'FINAL'
 
+      /* school detail page */
+      const viewingTeamId  = ref('');   // TeamID of the school being viewed
+
       /* can enter scores: admins in admin-view OR scorer role */
       const canScoreGames  = computed(() => isAdminView.value || isScorer.value);
 
@@ -207,7 +210,7 @@
       const newSchool  = reactive({ name: '', short: '', level: 'Elementary', logo: '' });
       const editSchool = reactive({ name: '', short: '', level: 'Elementary', logo: '' });
       const schoolFilter = reactive({ level: '', showInactive: false });
-      const editModal  = reactive({ show: false, gameId: '', teamA: '', teamB: '' });
+      const editModal  = reactive({ show: false, gameId: '', teamA: '', teamB: '', location: '' });
 
       /* score edit state keyed by GameID */
       const scoreEdits = reactive({});
@@ -225,8 +228,12 @@
       const teamsMap = computed(() => {
         const map = {};
         teams.value.forEach(t => {
-          const school = t.SchoolID ? schoolsMap.value[t.SchoolID] : null;
-          map[t.TeamID] = { ...t, logoUrl: school && school.LogoURL ? school.LogoURL : '' };
+          const sid = t.SchoolID ? String(t.SchoolID).trim() : '';
+          const school = sid ? (schoolsMap.value[sid] || schools.value.find(s => String(s.SchoolID).trim() === sid)) : null;
+          const schoolLogo = school ? (school.LogoURL || school.LogoUrl || school.logoUrl || '') : '';
+          const teamLogo = t.LogoURL || t.LogoUrl || t.logoUrl || '';
+          const schoolLevel = school ? (school.Level || '') : '';
+          map[t.TeamID] = { ...t, logoUrl: schoolLogo || teamLogo, schoolLevel };
         });
         return map;
       });
@@ -245,6 +252,33 @@
       );
 
       const hasData = computed(() => games.value.length > 0 || standings.value.length > 0);
+
+      const activePage = computed(() => {
+        const t = selectedTournament.value;
+        const tournamentName = t ? t.TournamentName : 'Tournament';
+        if (currentView.value === 'standings') {
+          return {
+            title: 'Standings',
+            subtitle: 'Current rankings and performance for ' + tournamentName + '.'
+          };
+        }
+        if (currentView.value === 'games') {
+          return {
+            title: 'Games',
+            subtitle: 'Manage and review all group-stage games for ' + tournamentName + '.'
+          };
+        }
+        if (currentView.value === 'bracket') {
+          return {
+            title: 'Bracket',
+            subtitle: 'Single-elimination progression for ' + tournamentName + '.'
+          };
+        }
+        return {
+          title: 'Overview',
+          subtitle: 'Quick snapshot of standings and recent activity for ' + tournamentName + '.'
+        };
+      });
 
       /* All active teams for the selected tournament (for match builder dropdowns) */
       const availableTeams = computed(() => teams.value.slice());
@@ -265,6 +299,47 @@
         const s = AUTH.getSession();
         return s ? (s.display || s.username) : '';
       });
+
+      /* ── School detail page ─────────────────────────────── */
+      const schoolPageTeam = computed(() =>
+        viewingTeamId.value ? (teamsMap.value[viewingTeamId.value] || null) : null
+      );
+      const schoolPageRecord = computed(() =>
+        viewingTeamId.value ? (standings.value.find(r => r.TeamID === viewingTeamId.value) || null) : null
+      );
+      const schoolPageGames = computed(() => {
+        if (!viewingTeamId.value) return [];
+        const tid = viewingTeamId.value;
+        const stageOrder = { GROUP: 0, ROUND_ROBIN: 0, QF: 1, SF: 2, FINAL: 3 };
+        return games.value
+          .filter(g => g.TeamA_ID === tid || g.TeamB_ID === tid)
+          .sort((a, b) => {
+            const so = (stageOrder[a.Stage] ?? 9) - (stageOrder[b.Stage] ?? 9);
+            if (so !== 0) return so;
+            return (a.RoundNumber || 0) - (b.RoundNumber || 0);
+          });
+      });
+
+      /* Games grouped by stage section for the school detail page */
+      const schoolPageGameSections = computed(() => {
+        const stageLabel = {
+          GROUP: 'Group Stage', ROUND_ROBIN: 'Round Robin',
+          QF: 'Quarterfinals', SF: 'Semifinals', FINAL: 'Final'
+        };
+        const sections = [];
+        let currentStage = null;
+        for (const g of schoolPageGames.value) {
+          const label = stageLabel[g.Stage] || g.Stage || 'Games';
+          if (g.Stage !== currentStage) {
+            sections.push({ stage: g.Stage, label, games: [] });
+            currentStage = g.Stage;
+          }
+          sections[sections.length - 1].games.push(g);
+        }
+        return sections;
+      });
+      function openSchoolPage(teamId) { viewingTeamId.value = teamId; }
+      function closeSchoolPage()      { viewingTeamId.value = '';     }
 
       /* Group games list into [{ round, games[] }] sorted by round */
       function groupByRound(list) {
@@ -288,20 +363,38 @@
       /* Overview phase tabs: which stages actually have games */
       const overviewPhases = computed(() => {
         const stages = new Set(games.value.map(g => g.Stage));
-        const tabs = [{ key: '', label: 'Group Rounds' }];
+        const tabs = [{ key: '', label: 'Group Stage' }];
         if (stages.has('QF'))    tabs.push({ key: 'QF',    label: 'Quarterfinals' });
         if (stages.has('SF'))    tabs.push({ key: 'SF',    label: 'Semifinals'    });
         if (stages.has('FINAL')) tabs.push({ key: 'FINAL', label: 'Final'         });
         return tabs;
       });
 
-      /* Games shown in the overview "recent" panel based on selected phase */
-      const overviewRounds = computed(() => {
-        const phase = overviewPhase.value;
-        if (!phase) return recentRounds.value;
-        const filtered = games.value.filter(g => g.Stage === phase);
-        return groupByRound(filtered);
+      /* Most advanced bracket stage currently in play (used to auto-select overview tab) */
+      const latestOverviewPhase = computed(() => {
+        const stageOrder = ['FINAL', 'SF', 'QF'];
+        for (const stage of stageOrder) {
+          if (games.value.some(g => g.Stage === stage)) return stage;
+        }
+        return '';
       });
+
+      /* Label for the currently selected overview phase */
+      const overviewPhaseLabel = computed(() => {
+        const ph = overviewPhases.value.find(p => p.key === overviewPhase.value);
+        return ph ? ph.label : 'Group Stage';
+      });
+
+      /* Flat list of games for the selected bracket phase (QF / SF / FINAL) */
+      const overviewStageGames = computed(() => {
+        const phase = overviewPhase.value;
+        if (!phase) return [];
+        return games.value.filter(g => g.Stage === phase)
+          .sort((a, b) => a.GameLabel.localeCompare(b.GameLabel, undefined, { numeric: true }));
+      });
+
+      /* Games shown in the overview "recent" panel (group phase only) */
+      const overviewRounds = computed(() => recentRounds.value);
 
       /* show-location flag for selected tournament */
       const showLocation = computed(() =>
@@ -360,8 +453,10 @@
           if (tournaments.value.length && !selectedTournamentId.value) {
             selectedTournamentId.value = String(tournaments.value[0].TournamentID);
             await loadTournamentData();
+            overviewPhase.value = latestOverviewPhase.value;
           } else if (selectedTournamentId.value) {
             await loadTournamentData();
+            overviewPhase.value = latestOverviewPhase.value;
           }
         } catch (e) {
           showAlert(e.message || String(e), 'error');
@@ -411,8 +506,29 @@
       /* ── Team name helper ───────────────────────────────── */
       function teamNameFor(id) {
         if (!id || id === 'BYE') return 'BYE';
-        const t = teamsMap.value[id];
+        const key = String(id).trim();
+        const t = teamsMap.value[key] || teams.value.find(team => String(team.TeamID).trim() === key);
         return t ? t.TeamName : id;
+      }
+
+      function teamLogoFor(id) {
+        if (!id || id === 'BYE') return '';
+
+        const key = String(id).trim();
+        const fromMap = teamsMap.value[key] || teamsMap.value[id];
+        const team = fromMap || teams.value.find(t => String(t.TeamID).trim() === key);
+        if (!team) return '';
+
+        if (team.logoUrl) return team.logoUrl;
+        if (team.LogoURL) return team.LogoURL;
+        if (team.LogoUrl) return team.LogoUrl;
+
+        const schoolId = team.SchoolID;
+        if (!schoolId) return '';
+        const schoolKey = String(schoolId).trim();
+        const school = schoolsMap.value[schoolKey] || schools.value.find(s => String(s.SchoolID).trim() === schoolKey);
+        if (!school) return '';
+        return school.LogoURL || school.LogoUrl || school.logoUrl || '';
       }
 
       /* ── Tournament handlers ────────────────────────────── */
@@ -420,7 +536,9 @@
         currentView.value = 'overview';
         if (selectedTournamentId.value) {
           await loadTournamentData();
+          overviewPhase.value = latestOverviewPhase.value;
         } else {
+          overviewPhase.value = '';
           teams.value = []; games.value = []; standings.value = [];
         }
       }
@@ -694,20 +812,26 @@
       function openEditGameModal(game) {
         editModal.show = true; editModal.gameId = game.GameID;
         editModal.teamA = game.TeamA_ID; editModal.teamB = game.TeamB_ID;
+        editModal.location = game.Location || '';
       }
 
       async function onSaveGameTeams() {
         try {
-          API.updateGameTeams(editModal.gameId, editModal.teamA, editModal.teamB);
+          API.updateGameTeams(editModal.gameId, editModal.teamA, editModal.teamB, editModal.location);
           editModal.show = false;
           await loadTournamentData();
-          showAlert('Game teams updated', 'success');
+          showAlert('Game updated', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
       /* ── Schools tab handlers ───────────────────────────── */
       function onGoToSchoolsTab() {
-        adminTab.value = 'schools';
+        if (showAppSettings.value && appTab.value === 'schools') {
+          showAppSettings.value = false;
+          return;
+        }
+        showAppSettings.value = true;
+        appTab.value = 'schools';
         reloadSchools();
       }
 
@@ -841,17 +965,19 @@
         /* state */
         loading, toasts, isAdmin, isScorer, viewMode,
         selectedTournamentId, tournaments, teams, games, standings, schools,
-        tournamentTeams, currentView, adminTab,
+        tournamentTeams, currentView, adminTab, appTab, showAppSettings,
         showCreateForm, bulkMode, showLoginModal, schoolsEditingId,
         editModal, newT, loginForm, newSchool, editSchool, schoolFilter, scoreEdits,
         sports, newSportName, bracketEdits,
-        adminUsers, newAdminUser, overviewPhase,
+        adminUsers, newAdminUser, overviewPhase, viewingTeamId,
         /* computed */
         isAdminView, canScoreGames, teamsMap, schoolsMap, selectedTournament, filteredSchools, hasData,
+        activePage,
         authDisplayName, recentRounds, allRounds,
         bracketGames, hasBracket, bracketTree,
-        overviewPhases, overviewRounds, showLocation,
+        overviewPhases, overviewPhaseLabel, overviewStageGames, overviewRounds, latestOverviewPhase, showLocation,
         availableTeams, validationWarnings,
+        schoolPageTeam, schoolPageRecord, schoolPageGames, schoolPageGameSections,
         /* match builder */
         showMatchBuilder, matchBuilderRounds,
         openMatchBuilder, addMatchupSlot, removeMatchup,
@@ -867,7 +993,8 @@
         onToggleSchoolActive, onAddSchool,
         onAddSport, onRemoveSport, onSaveBracketSeeding,
         onAddAdminUser, onRemoveAdminUser, onToggleShowLocation,
-        teamNameFor, formatLabel, statusClass
+        teamNameFor, teamLogoFor, formatLabel, statusClass,
+        openSchoolPage, closeSchoolPage
       };
     }
   });
