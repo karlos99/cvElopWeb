@@ -147,7 +147,9 @@ var DB = (function () {
      * database using the following priority:
      *
      *   1. localStorage  — user's persisted session from a previous visit
-     *   2. Blank DB      — fresh schema + SEED_SCHOOLS inserted inline
+     *   2. app.db        — file served by the web server (committed to repo,
+     *                      updated via Download → commit → deploy workflow)
+     *   3. Blank DB      — fallback using SEED_SCHOOLS when no server file exists
      *
      * Always ensures the schema tables exist (CREATE TABLE IF NOT EXISTS).
      */
@@ -171,22 +173,36 @@ var DB = (function () {
         }
       }
 
-      /* ── Priority 2: fresh DB — create schema + seed schools ── */
+      /* ── Priority 2: fetch app.db from the server ── */
       if (!saved) {
-        _db = new _SQL.Database();
-        _db.exec(SCHEMA_SQL);
-        SEED_SCHOOLS.forEach(function (s) {
-          _db.run(
-            'INSERT OR IGNORE INTO Schools (SchoolID, SchoolName, SchoolShortName, Level, LogoURL, IsActive) VALUES (?,?,?,?,?,1)',
-            [s.id, s.name, s.short, s.level, s.logo]
-          );
-        });
-        console.log('[DB] Fresh DB — seeded ' + SEED_SCHOOLS.length + ' schools');
-      } else {
-        /* ensure all tables exist on an existing localStorage DB */
-        _db.exec(SCHEMA_SQL);
+        try {
+          var resp = await fetch('app.db', { cache: 'no-store' });
+          if (resp.ok) {
+            var buf = await resp.arrayBuffer();
+            _db = new _SQL.Database(new Uint8Array(buf));
+            console.log('[DB] Loaded from app.db (' + (buf.byteLength / 1024).toFixed(1) + ' KB)');
+          } else {
+            throw new Error('HTTP ' + resp.status);
+          }
+        } catch (e) {
+          console.warn('[DB] Could not fetch app.db — seeding from inline data:', e);
+          _db = new _SQL.Database();
+          _db.exec(SCHEMA_SQL);
+          SEED_SCHOOLS.forEach(function (s) {
+            _db.run(
+              'INSERT OR IGNORE INTO Schools (SchoolID, SchoolName, SchoolShortName, Level, LogoURL, IsActive) VALUES (?,?,?,?,?,1)',
+              [s.id, s.name, s.short, s.level, s.logo]
+            );
+          });
+          console.log('[DB] Fresh DB — seeded ' + SEED_SCHOOLS.length + ' schools from inline data');
+        }
+      }
 
-        /* sync any missing/outdated logos from SEED_SCHOOLS inline data */
+      /* ensure all tables exist (idempotent — safe on any DB) */
+      _db.exec(SCHEMA_SQL);
+
+      /* sync any missing/outdated logos from SEED_SCHOOLS inline data */
+      if (saved) {
         SEED_SCHOOLS.forEach(function (s) {
           if (!s.logo) return;
           _db.run(
