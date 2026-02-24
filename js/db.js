@@ -5,18 +5,30 @@
  *
  * Initialisation priority:
  *   1. localStorage  — restores a previously saved user session
- *   2. Blank DB      — fresh schema seeded with SEED_SCHOOLS inline data
+ *   2. app.db        — file served by the web server (updated via save.php)
+ *   3. Blank DB      — fallback using SEED_SCHOOLS when no server file exists
  *
- * The database is persisted to localStorage as a binary byte array so
- * data survives page reloads without any server or Node.js.
+ * Multi-device persistence:
+ *   When an admin logs in, app.js calls DB.enableServerSync() so that every
+ *   DB.save() also POSTs the full SQLite binary to save.php, which writes it
+ *   back to app.db on the server.  Any other browser that hasn't loaded data
+ *   yet will then fetch the updated app.db on their first visit.
+ *
+ * ── SERVER SYNC CONFIG ──────────────────────────────────────────────────────
+ *   SAVE_TOKEN must match the SAVE_TOKEN constant in save.php.
+ *   Change both to the same unique string before deploying.
+ * ────────────────────────────────────────────────────────────────────────────
  *
  * Public surface:
- *   DB.init()           → Promise – initialise sql.js + load or create DB
- *   DB.query(sql, p)    → Array<Object> – SELECT
- *   DB.queryOne(sql, p) → Object|null – SELECT (first row only)
- *   DB.run(sql, p)      → void – INSERT / UPDATE / DELETE
- *   DB.save()           → void – flush DB bytes to localStorage
- *   DB.isReady()        → boolean
+ *   DB.init()                → Promise – initialise sql.js + load or create DB
+ *   DB.query(sql, p)         → Array<Object> – SELECT
+ *   DB.queryOne(sql, p)      → Object|null – SELECT (first row only)
+ *   DB.run(sql, p)           → void – INSERT / UPDATE / DELETE
+ *   DB.save()                → void – flush DB bytes to localStorage (+ server if sync enabled)
+ *   DB.download()            → void – trigger browser download of app.db
+ *   DB.enableServerSync()    → void – start POSTing saves to save.php (call after admin login)
+ *   DB.disableServerSync()   → void – stop POSTing to server (call after logout)
+ *   DB.isReady()             → boolean
  */
 
 var DB = (function () {
@@ -24,7 +36,10 @@ var DB = (function () {
   /* ── private state ───────────────────────────────────────────── */
   var _db  = null;
   var _SQL = null;
-  var STORAGE_KEY = 'cdElop26_db_v1';
+  var STORAGE_KEY   = 'cdElop26_db_v1';
+  var SAVE_ENDPOINT = 'save.php';
+  var SAVE_TOKEN    = 'ases-elop-2026-secure'; // must match save.php
+  var _serverSync   = false;
 
   /* ── school seed data ─────────────────────────────────────────── */
   var SEED_SCHOOLS = [
@@ -217,16 +232,42 @@ var DB = (function () {
 
     /**
      * Export the in-memory database to localStorage so data persists
-     * across page reloads.
+     * across page reloads.  When server sync is enabled (admin is logged in)
+     * also POSTs the bytes to save.php so other devices pick up the changes.
      */
     save: function () {
       if (!_db) return;
       var data = _db.export();
+      /* always write to localStorage first — this is synchronous and fast */
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)));
       } catch (e) {
         console.warn('[DB] Could not save to localStorage (quota exceeded?):', e);
       }
+      /* async POST to server when admin sync is active */
+      if (_serverSync) {
+        fetch(SAVE_ENDPOINT, {
+          method:  'POST',
+          headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
+          body:    data
+        }).then(function (r) {
+          if (!r.ok) console.warn('[DB] Server save failed: HTTP ' + r.status);
+        }).catch(function (e) {
+          console.warn('[DB] Server save error:', e);
+        });
+      }
+    },
+
+    /** Enable POSTing saves to save.php.  Call after a successful admin login. */
+    enableServerSync: function () {
+      _serverSync = true;
+      console.log('[DB] Server sync enabled');
+    },
+
+    /** Disable POSTing to save.php.  Call after admin logout. */
+    disableServerSync: function () {
+      _serverSync = false;
+      console.log('[DB] Server sync disabled');
     },
 
     /**

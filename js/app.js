@@ -590,6 +590,7 @@
         } else {
           isAdmin.value  = true;
           viewMode.value = 'admin';
+          DB.enableServerSync();
           loadData().then(() =>
             showAlert('Welcome, ' + result.display + '! You are now in Admin mode.', 'success')
           );
@@ -598,6 +599,7 @@
 
       function onLogout() {
         AUTH.logout();
+        DB.disableServerSync();
         isAdmin.value = false; isScorer.value = false; viewMode.value = 'public';
         selectedTournamentId.value = '';
         teams.value = []; games.value = []; standings.value = [];
@@ -957,6 +959,7 @@
         if (session && session.role === 'admin') {
           isAdmin.value = true;
           viewMode.value = 'admin';
+          DB.enableServerSync();
         } else if (session && session.role === 'scorer') {
           isScorer.value = true;
         }
