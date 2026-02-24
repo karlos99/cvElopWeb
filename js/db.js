@@ -38,7 +38,7 @@ var DB = (function () {
   var _SQL = null;
   var STORAGE_KEY   = 'cdElop26_db_v1';
   var SAVE_ENDPOINT = 'save.php';
-  var SAVE_TOKEN    = 'ases-elop-2026-secure'; // must match save.php
+  var SAVE_TOKEN    = 'c7f4b2e9a18d45f0c3e6b9d27a5f801c'; // must match save.php
   var _serverSync   = false;
 
   /* ── school seed data ─────────────────────────────────────────── */

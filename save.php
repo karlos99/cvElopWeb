@@ -14,7 +14,7 @@
  * and set the same value in js/db.js → SAVE_TOKEN.
  */
 
-define('SAVE_TOKEN', 'ases-elop-2026-secure');
+define('SAVE_TOKEN', 'c7f4b2e9a18d45f0c3e6b9d27a5f801c`);
 define('DB_PATH',    __DIR__ . '/app.db');
 define('MAX_SIZE',   10 * 1024 * 1024); // 10 MB hard cap
 define('SQLITE_MAGIC', "SQLite format 3\000");
