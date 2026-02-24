@@ -238,7 +238,7 @@ var DB = (function () {
     save: function () {
       if (!_db) return;
       var data = _db.export();
-      /* always write to localStorage first — this is synchronous and fast */
+      /* always write to localStorage first — synchronous and instant */
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)));
       } catch (e) {
@@ -246,16 +246,43 @@ var DB = (function () {
       }
       /* async POST to server when admin sync is active */
       if (_serverSync) {
-        fetch(SAVE_ENDPOINT, {
+        /* send token in both header (standard) and query param (.htaccess fallback) */
+        var url = SAVE_ENDPOINT + '?token=' + encodeURIComponent(SAVE_TOKEN);
+        fetch(url, {
           method:  'POST',
           headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
           body:    data
         }).then(function (r) {
-          if (!r.ok) console.warn('[DB] Server save failed: HTTP ' + r.status);
+          if (r.ok) {
+            if (_onSyncResult) _onSyncResult(true, 'Saved to server');
+          } else {
+            var msg = 'Server save failed: HTTP ' + r.status;
+            console.warn('[DB] ' + msg);
+            if (_onSyncResult) _onSyncResult(false, msg);
+          }
         }).catch(function (e) {
-          console.warn('[DB] Server save error:', e);
+          var msg = 'Server unreachable: ' + (e.message || e);
+          console.warn('[DB] ' + msg);
+          if (_onSyncResult) _onSyncResult(false, msg);
         });
       }
+    },
+
+    /**
+     * Register a callback that fires after every server sync attempt.
+     * @param {function} fn  Called with (ok: boolean, message: string)
+     */
+    onSyncResult: function (fn) {
+      _onSyncResult = fn;
+    },
+
+    /**
+     * Force an immediate sync to the server (e.g. from a manual "Sync now" button).
+     * Does nothing if server sync is not enabled.
+     */
+    forceSyncToServer: function () {
+      if (!_db || !_serverSync) return;
+      this.save();
     },
 
     /** Enable POSTing saves to save.php.  Call after a successful admin login. */

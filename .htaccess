@@ -1,0 +1,7 @@
+# Pass Authorization header through to PHP (required on most shared hosts)
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} .+
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Also expose it via the standard CGI env var name some hosts use
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1

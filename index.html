@@ -349,10 +349,28 @@
           <!-- Data -->
           <div class="action-group">
             <div class="action-group-title">Data</div>
+
+            <!-- Server sync status -->
+            <div class="action-row" style="align-items:center">
+              <div class="action-row-info">
+                <h4>Server Sync</h4>
+                <p v-if="serverSyncStatus.ok === null" style="color:#9ca3af">Waiting for first write…</p>
+                <p v-else-if="serverSyncStatus.ok" style="color:#059669">
+                  ✓ Synced at {{ serverSyncStatus.time }}
+                </p>
+                <p v-else style="color:#dc2626">
+                  ⚠ {{ serverSyncStatus.message }} — <strong>data not saved to server</strong>
+                </p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onForceSyncToServer" class="btn btn-success btn-xs">Sync now</button>
+              </div>
+            </div>
+
             <div class="action-row">
               <div class="action-row-info">
                 <h4>Export Database</h4>
-                <p>Downloads the current database as <code>app.db</code>. Replace the file on disk or in the Docker volume to make data available to other browsers.</p>
+                <p>Downloads the current database as <code>app.db</code>. Commit and push to update what new browsers load.</p>
               </div>
               <div class="action-row-btns">
                 <button @click="onDownloadDb" class="btn btn-primary btn-xs">Download app.db</button>
@@ -1156,9 +1174,9 @@
 <!-- Scripts (order matters) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="js/db.js?v=13"></script>
+<script src="js/db.js?v=14"></script>
 <script src="js/api.js?v=11"></script>
 <script src="js/auth.js?v=9"></script>
-<script src="js/app.js?v=28"></script>
+<script src="js/app.js?v=29"></script>
 </body>
 </html>

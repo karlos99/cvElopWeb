@@ -160,6 +160,7 @@
       const toasts             = ref([]);
       const isAdmin            = ref(false);
       const viewMode           = ref('public');   // 'admin' | 'public'
+      const serverSyncStatus   = reactive({ ok: null, message: '', time: '' }); // null=unknown, true=ok, false=error
       const selectedTournamentId = ref('');
       const tournaments        = ref([]);
       const teams              = ref([]);
@@ -766,6 +767,11 @@
         showAlert('Downloading app.db — replace the file on disk to persist data across sessions', 'info');
       }
 
+      function onForceSyncToServer() {
+        DB.forceSyncToServer();
+        showAlert('Syncing to server…', 'info');
+      }
+
       async function onDeleteTournament() {
         if (!selectedTournamentId.value) return;
         if (!confirm('Delete this tournament and all its data? This cannot be undone.')) return;
@@ -955,6 +961,12 @@
         API.seedSampleData();
         loadSports();
         loadAdminUsers();
+        /* register server sync result callback */
+        DB.onSyncResult(function (ok, message) {
+          serverSyncStatus.ok      = ok;
+          serverSyncStatus.message = message;
+          serverSyncStatus.time    = new Date().toLocaleTimeString();
+        });
         const session = AUTH.getSession();
         if (session && session.role === 'admin') {
           isAdmin.value = true;
@@ -995,7 +1007,8 @@
         openLoginModal, onLoginSubmit, onLogout,
         onAddTeamRow, onRemoveTeamRow, onAddAllSchools, onSaveTeams,
         onGenerateSchedule, onGenerateBracket,
-        onSetStatus, onTogglePublic, onRebuildStandings, onDeleteTournament, onDownloadDb,
+        onSetStatus, onTogglePublic, onRebuildStandings, onDeleteTournament, onDownloadDb, onForceSyncToServer,
+        serverSyncStatus,
         onSaveScore, onSaveAllScores, openEditGameModal, onSaveGameTeams,
         onGoToSchoolsTab, startEditSchool, onCancelSchoolEdit, onSaveSchoolEdit,
         onToggleSchoolActive, onAddSchool,

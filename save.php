@@ -36,14 +36,27 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ── Auth check ───────────────────────────────────────────────────
-$auth = isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : '';
-// Some servers pass it differently
-if (!$auth && function_exists('getallheaders')) {
-    $headers = getallheaders();
-    $auth = isset($headers['Authorization']) ? $headers['Authorization'] : '';
+// Apache on shared hosting often strips the Authorization header.
+// We check three fallback locations in priority order:
+//   1. Standard Authorization header
+//   2. HTTP_AUTHORIZATION env var set by .htaccess RewriteRule
+//   3. ?token= query param (last resort)
+function getToken() {
+    $h = '';
+    if (!empty($_SERVER['HTTP_AUTHORIZATION']))          $h = $_SERVER['HTTP_AUTHORIZATION'];
+    elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $h = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    elseif (function_exists('getallheaders')) {
+        $hdrs = getallheaders();
+        if (!empty($hdrs['Authorization']))  $h = $hdrs['Authorization'];
+        if (!$h && !empty($hdrs['authorization'])) $h = $hdrs['authorization'];
+    }
+    if ($h && strncasecmp($h, 'Bearer ', 7) === 0) return substr($h, 7);
+    // fallback: plain query param
+    if (!empty($_GET['token'])) return $_GET['token'];
+    return '';
 }
-$expected = 'Bearer ' . SAVE_TOKEN;
-if ($auth !== $expected) {
+
+if (getToken() !== SAVE_TOKEN) {
     http_response_code(401);
     exit(json_encode(['ok' => false, 'error' => 'Unauthorized']));
 }
