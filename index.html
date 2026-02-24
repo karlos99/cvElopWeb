@@ -351,6 +351,15 @@
             <div class="action-group-title">Data</div>
             <div class="action-row">
               <div class="action-row-info">
+                <h4>Export Database</h4>
+                <p>Downloads the current database as <code>app.db</code>. Replace the file on disk or in the Docker volume to make data available to other browsers.</p>
+              </div>
+              <div class="action-row-btns">
+                <button @click="onDownloadDb" class="btn btn-primary btn-xs">Download app.db</button>
+              </div>
+            </div>
+            <div class="action-row">
+              <div class="action-row-info">
                 <h4>Rebuild Standings</h4>
                 <p>Recalculates all standings from recorded game scores.</p>
               </div>
@@ -823,6 +832,7 @@
             <button class="workflow-tab" :class="{'workflow-tab-active': appTab === 'schools'}" @click="appTab = 'schools'">Schools</button>
             <button class="workflow-tab" :class="{'workflow-tab-active': appTab === 'sports'}"  @click="appTab = 'sports'">Sports</button>
             <button class="workflow-tab" :class="{'workflow-tab-active': appTab === 'users'}"   @click="appTab = 'users'">Users</button>
+            <button class="workflow-tab" :class="{'workflow-tab-active': appTab === 'db'}"      @click="appTab = 'db'">Database</button>
           </div>
         </div>
         <button @click="showAppSettings = false" class="btn btn-ghost btn-sm" title="Close">✕</button>
@@ -983,7 +993,24 @@
           </div>
           <button @click="onAddAdminUser" class="btn btn-primary mt-3">+ Add User</button>
         </div>
-      </div>
+      </div><!-- /users tab -->
+
+      <!-- Database tab -->
+      <div v-show="appTab === 'db'">
+        <h3 class="section-title mb-4">Database</h3>
+        <div class="action-group">
+          <div class="action-group-title">Export</div>
+          <div class="action-row">
+            <div class="action-row-info">
+              <h4>Download app.db</h4>
+              <p>Downloads the full database as <code>app.db</code>. To persist data for other browsers or devices, replace the file on disk (Docker volume / GitHub Pages repo) with this download and reload.</p>
+            </div>
+            <div class="action-row-btns">
+              <button @click="onDownloadDb" class="btn btn-primary btn-sm">⬇ Download app.db</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /db tab -->
 
     </div><!-- /modal-box -->
   </div><!-- /app-settings-modal -->
@@ -1129,9 +1156,9 @@
 <!-- Scripts (order matters) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="js/db.js?v=10"></script>
+<script src="js/db.js?v=11"></script>
 <script src="js/api.js?v=11"></script>
 <script src="js/auth.js?v=9"></script>
-<script src="js/app.js?v=26"></script>
+<script src="js/app.js?v=27"></script>
 </body>
 </html>

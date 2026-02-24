@@ -214,6 +214,25 @@ var DB = (function () {
     },
 
     /**
+     * Trigger a browser download of the current database as app.db.
+     * Replace the file on disk with this download to persist data for
+     * other browsers / devices or to update the seed file.
+     */
+    download: function () {
+      if (!_db) return;
+      var data  = _db.export();
+      var blob  = new Blob([data], { type: 'application/x-sqlite3' });
+      var url   = URL.createObjectURL(blob);
+      var a     = document.createElement('a');
+      a.href     = url;
+      a.download = 'app.db';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+      console.log('[DB] Downloaded app.db (' + (data.byteLength / 1024).toFixed(1) + ' KB)');
+    },
+
+    /**
      * Execute a SELECT query and return all matching rows as objects.
      * @param {string} sql    - SQL with ? placeholders
      * @param {Array}  params - Bind parameters

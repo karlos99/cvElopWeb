@@ -759,6 +759,11 @@
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
+      function onDownloadDb() {
+        DB.download();
+        showAlert('Downloading app.db — replace the file on disk to persist data across sessions', 'info');
+      }
+
       async function onDeleteTournament() {
         if (!selectedTournamentId.value) return;
         if (!confirm('Delete this tournament and all its data? This cannot be undone.')) return;
@@ -987,7 +992,7 @@
         openLoginModal, onLoginSubmit, onLogout,
         onAddTeamRow, onRemoveTeamRow, onAddAllSchools, onSaveTeams,
         onGenerateSchedule, onGenerateBracket,
-        onSetStatus, onTogglePublic, onRebuildStandings, onDeleteTournament,
+        onSetStatus, onTogglePublic, onRebuildStandings, onDeleteTournament, onDownloadDb,
         onSaveScore, onSaveAllScores, openEditGameModal, onSaveGameTeams,
         onGoToSchoolsTab, startEditSchool, onCancelSchoolEdit, onSaveSchoolEdit,
         onToggleSchoolActive, onAddSchool,
