@@ -239,10 +239,8 @@
         return map;
       });
 
-      const selectedTournament = computed(() => {
-        if (!selectedTournamentId.value) return null;
-        return API.getTournament(selectedTournamentId.value);
-      });
+      const _tournamentData = ref(null);
+      const selectedTournament = computed(() => _tournamentData.value);
 
       const filteredSchools = computed(() =>
         schools.value.filter(s => {
@@ -398,11 +396,8 @@
       const overviewRounds = computed(() => recentRounds.value);
 
       /* show-location flag for selected tournament */
-      const showLocation = computed(() =>
-        selectedTournamentId.value
-          ? API.getShowLocation(selectedTournamentId.value)
-          : false
-      );
+      const _showLocation = ref(false);
+      const showLocation = computed(() => _showLocation.value);
 
       /* Build structured bracket: { qf: [...], sf: [...], final: game|null } */
       const bracketTree = computed(() => {
@@ -448,8 +443,8 @@
       async function loadData() {
         loading.value = true;
         try {
-          tournaments.value = API.listTournaments(isAdminView.value);
-          schools.value = API.listSchools(false); // always load for logos
+          tournaments.value = await API.listTournaments(isAdminView.value);
+          schools.value = await API.listSchools(false); // always load for logos
 
           if (tournaments.value.length && !selectedTournamentId.value) {
             selectedTournamentId.value = String(tournaments.value[0].TournamentID);
@@ -469,9 +464,16 @@
       async function loadTournamentData() {
         if (!selectedTournamentId.value) return;
         try {
-          teams.value     = API.listTeams(selectedTournamentId.value);
-          games.value     = API.listGames(selectedTournamentId.value);
-          standings.value = API.getStandings(selectedTournamentId.value);
+          const tid = selectedTournamentId.value;
+          const [t, g, s, tdata, sloc] = await Promise.all([
+            API.listTeams(tid),
+            API.listGames(tid),
+            API.getStandings(tid),
+            API.getTournament(tid),
+            API.getShowLocation(tid)
+          ]);
+          teams.value = t; games.value = g; standings.value = s;
+          _tournamentData.value = tdata; _showLocation.value = !!sloc;
           if (isAdminView.value) syncTeamsDraft();
         } catch (e) {
           showAlert(e.message || String(e), 'error');
@@ -488,7 +490,7 @@
         }));
       }
 
-      function reloadSchools() { schools.value = API.listSchools(false); }
+      async function reloadSchools() { schools.value = await API.listSchools(false); }
 
       /* ── Tournament details helper ──────────────────────────── */
       function formatLabel(t) {
@@ -553,7 +555,7 @@
       async function onCreate() {
         if (!newT.name.trim()) { showAlert('Tournament name is required', 'error'); return; }
         try {
-          const created = API.createTournament({
+          const created = await API.createTournament({
             TournamentName: newT.name.trim(), Sport: newT.sport,
             SeasonYear:     Number(newT.year), Level: newT.level,
             Format:         newT.format, PublicVisible: newT.public, Notes: newT.notes
@@ -591,7 +593,6 @@
         } else {
           isAdmin.value  = true;
           viewMode.value = 'admin';
-          DB.enableServerSync();
           loadData().then(() =>
             showAlert('Welcome, ' + result.display + '! You are now in Admin mode.', 'success')
           );
@@ -600,7 +601,6 @@
 
       function onLogout() {
         AUTH.logout();
-        DB.disableServerSync();
         isAdmin.value = false; isScorer.value = false; viewMode.value = 'public';
         selectedTournamentId.value = '';
         teams.value = []; games.value = []; standings.value = [];
@@ -617,7 +617,7 @@
       async function onAddAllSchools() {
         if (!selectedTournamentId.value) return;
         try {
-          const res = API.addAllSchoolsByLevel(selectedTournamentId.value);
+          const res = await API.addAllSchoolsByLevel(selectedTournamentId.value);
           await loadTournamentData();
           showAlert('Added ' + res.added + ' schools. Total: ' + res.total, 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -626,7 +626,7 @@
       async function onSaveTeams() {
         if (!selectedTournamentId.value) return;
         try {
-          API.setParticipants(selectedTournamentId.value, tournamentTeams.value);
+          await API.setParticipants(selectedTournamentId.value, tournamentTeams.value);
           await loadTournamentData();
           showAlert('Teams saved!', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -707,7 +707,7 @@
           });
         });
         try {
-          const res = API.createCustomSchedule(selectedTournamentId.value, customMatchups, autoGenerate);
+          const res = await API.createCustomSchedule(selectedTournamentId.value, customMatchups, autoGenerate);
           await loadTournamentData();
           showMatchBuilder.value = false;
           showAlert('Schedule saved — ' + res.createdGames + ' games (' + res.stage + ')', 'success');
@@ -718,7 +718,7 @@
       async function onGenerateSchedule() {
         if (!selectedTournamentId.value) { showAlert('Select a tournament first', 'error'); return; }
         try {
-          const res = API.generateSchedule(selectedTournamentId.value);
+          const res = await API.generateSchedule(selectedTournamentId.value);
           await loadTournamentData();
           showAlert('Generated ' + res.createdGames + ' games (' + res.stage + ')', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -728,7 +728,7 @@
       async function onGenerateBracket(force) {
         if (!selectedTournamentId.value) return;
         try {
-          const res = API.generateBracket(selectedTournamentId.value, !!force);
+          const res = await API.generateBracket(selectedTournamentId.value, !!force);
           await loadTournamentData();
           showAlert('Bracket generated — ' + res.createdGames + ' games created', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -738,7 +738,7 @@
       async function onSetStatus(status) {
         if (!selectedTournamentId.value) return;
         try {
-          API.setTournamentStatus(selectedTournamentId.value, status);
+          await API.setTournamentStatus(selectedTournamentId.value, status);
           await loadData();
           showAlert('Status set to ' + status, 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -747,7 +747,7 @@
       async function onTogglePublic() {
         if (!selectedTournamentId.value) return;
         try {
-          const t = API.toggleTournamentPublic(selectedTournamentId.value);
+          const t = await API.toggleTournamentPublic(selectedTournamentId.value);
           await loadData();
           showAlert('Tournament is now ' + (t.PublicVisible ? 'public' : 'private'), 'info');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -756,7 +756,7 @@
       async function onRebuildStandings() {
         if (!selectedTournamentId.value) return;
         try {
-          API.rebuildStandings(selectedTournamentId.value);
+          await API.rebuildStandings(selectedTournamentId.value);
           await loadTournamentData();
           showAlert('Standings rebuilt', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -776,7 +776,7 @@
         if (!selectedTournamentId.value) return;
         if (!confirm('Delete this tournament and all its data? This cannot be undone.')) return;
         try {
-          API.deleteTournament(selectedTournamentId.value);
+          await API.deleteTournament(selectedTournamentId.value);
           selectedTournamentId.value = '';
           teams.value = []; games.value = []; standings.value = [];
           await loadData();
@@ -789,7 +789,7 @@
         const edit = scoreEdits[game.GameID];
         if (!edit) return;
         try {
-          API.saveScore(game.GameID, edit.a, edit.b);
+          await API.saveScore(game.GameID, edit.a, edit.b);
           await loadTournamentData();
           showAlert('Score saved', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
@@ -807,7 +807,7 @@
           if (aVal === '' || bVal === '') continue;
           if (Number(aVal) === Number(bVal)) { ties++; continue; }
           try {
-            API.saveScore(game.GameID, edit.a, edit.b);
+            await API.saveScore(game.GameID, edit.a, edit.b);
             saved++;
           } catch (e) { errors.push(e.message || String(e)); }
         }
@@ -830,7 +830,7 @@
 
       async function onSaveGameTeams() {
         try {
-          API.updateGameTeams(editModal.gameId, editModal.teamA, editModal.teamB, editModal.location);
+          await API.updateGameTeams(editModal.gameId, editModal.teamA, editModal.teamB, editModal.location);
           editModal.show = false;
           await loadTournamentData();
           showAlert('Game updated', 'success');
@@ -858,56 +858,56 @@
 
       function onCancelSchoolEdit() { schoolsEditingId.value = ''; }
 
-      function onSaveSchoolEdit(s) {
+      async function onSaveSchoolEdit(s) {
         try {
-          API.updateSchool(s.SchoolID, {
+          await API.updateSchool(s.SchoolID, {
             SchoolName: editSchool.name, SchoolShortName: editSchool.short,
             Level: editSchool.level,     LogoURL: editSchool.logo
           });
           schoolsEditingId.value = '';
-          reloadSchools();
+          await reloadSchools();
           showAlert('School updated', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
-      function onToggleSchoolActive(s) {
+      async function onToggleSchoolActive(s) {
         try {
-          API.updateSchool(s.SchoolID, { IsActive: s.IsActive ? 0 : 1 });
-          reloadSchools();
+          await API.updateSchool(s.SchoolID, { IsActive: s.IsActive ? 0 : 1 });
+          await reloadSchools();
           showAlert(s.IsActive ? 'School deactivated' : 'School reactivated', 'info');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
-      function onAddSchool() {
+      async function onAddSchool() {
         if (!newSchool.name.trim()) { showAlert('School name is required', 'error'); return; }
         try {
-          API.createSchool({
+          await API.createSchool({
             SchoolName: newSchool.name, SchoolShortName: newSchool.short,
             Level: newSchool.level, LogoURL: newSchool.logo
           });
           Object.assign(newSchool, { name: '', short: '', level: 'Elementary', logo: '' });
-          reloadSchools();
+          await reloadSchools();
           showAlert('School added', 'success');
         } catch (e) { showAlert(e.message || String(e), 'error'); }
       }
 
       /* ── Sports handlers ─────────────────────────────── */
-      function loadSports() { sports.value = API.listSports(); }
+      async function loadSports() { sports.value = await API.listSports(); }
 
-      function onAddSport() {
+      async function onAddSport() {
         const name = newSportName.value.trim();
         if (!name) { showAlert('Enter a sport name', 'error'); return; }
         if (sports.value.includes(name)) { showAlert('Already in the list', 'error'); return; }
         const updated = [...sports.value, name];
-        API.saveSports(updated);
+        await API.saveSports(updated);
         sports.value = updated;
         newSportName.value = '';
         showAlert('Sport added', 'success');
       }
 
-      function onRemoveSport(idx) {
+      async function onRemoveSport(idx) {
         const updated = sports.value.filter((_, i) => i !== idx);
-        API.saveSports(updated);
+        await API.saveSports(updated);
         sports.value = updated;
       }
 
@@ -931,12 +931,10 @@
       }
 
       /* ── Location visibility ───────────────────────────── */
-      function onToggleShowLocation() {
+      async function onToggleShowLocation() {
         if (!selectedTournamentId.value) return;
-        const current = API.getShowLocation(selectedTournamentId.value);
-        API.setShowLocation(selectedTournamentId.value, !current);
-        // force reactivity by reloading tournament data
-        loadTournamentData();
+        await API.setShowLocation(selectedTournamentId.value, !_showLocation.value);
+        _showLocation.value = !_showLocation.value;
       }
 
       /* ── Bracket seeding ────────────────────────────── */
@@ -947,7 +945,7 @@
           if (!edit) continue;
           if (edit.teamA === game.TeamA_ID && edit.teamB === game.TeamB_ID) continue;
           try {
-            API.updateGameTeams(game.GameID, edit.teamA, edit.teamB);
+            await API.updateGameTeams(game.GameID, edit.teamA, edit.teamB);
             saved++;
           } catch (e) { showAlert(e.message || String(e), 'error'); return; }
         }
@@ -957,21 +955,12 @@
 
       /* ── Lifecycle ────────────────────────────────────── */
       onMounted(async () => {
-        await DB.init();
-        API.seedSampleData();
         loadSports();
         loadAdminUsers();
-        /* register server sync result callback */
-        DB.onSyncResult(function (ok, message) {
-          serverSyncStatus.ok      = ok;
-          serverSyncStatus.message = message;
-          serverSyncStatus.time    = new Date().toLocaleTimeString();
-        });
         const session = AUTH.getSession();
         if (session && session.role === 'admin') {
           isAdmin.value = true;
           viewMode.value = 'admin';
-          DB.enableServerSync();
         } else if (session && session.role === 'scorer') {
           isScorer.value = true;
         }
